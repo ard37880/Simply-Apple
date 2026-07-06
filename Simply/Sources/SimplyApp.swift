@@ -38,7 +38,16 @@ struct RootView: View {
 
     init() {
         _ = Self.selftest
+        // `--open-product <barcode>`: jump straight to a product page
+        // (used for automated screenshots)
+        if let index = CommandLine.arguments.firstIndex(of: "--open-product"),
+           CommandLine.arguments.indices.contains(index + 1) {
+            ProfileStore.shared.onboarded = true
+            self._openBarcode = State(initialValue: CommandLine.arguments[index + 1])
+        }
     }
+
+    @State private var openBarcode: String?
 
     enum Route: Hashable {
         case product(String)
@@ -66,6 +75,12 @@ struct RootView: View {
                         Button { path.append(Route.profile) } label: {
                             Image(systemName: "person.circle")
                         }
+                    }
+                }
+                .onAppear {
+                    if let barcode = openBarcode {
+                        path.append(Route.product(barcode))
+                        openBarcode = nil
                     }
                 }
                 .navigationDestination(for: Route.self) { route in
