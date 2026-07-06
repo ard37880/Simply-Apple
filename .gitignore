@@ -6,3 +6,6 @@ xcuserdata/
 DerivedData/
 build/
 .DS_Store
+
+# App Store Connect API key — never commit
+*.p8
