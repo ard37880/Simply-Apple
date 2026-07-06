@@ -5,19 +5,44 @@ import SafariServices
 
 struct PreferenceEditor: View {
     @EnvironmentObject var profile: ProfileStore
+    var collapsible = false
+    @State private var dietsExpanded = false
+    @State private var allergensExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             TextField("Name (optional)", text: $profile.name)
                 .textFieldStyle(.roundedBorder)
 
-            Text("Diet preferences").font(.headline).padding(.top, 8)
-            chipGrid(ProfileStore.dietOptions.map { ($0.key, $0.label) },
-                     selected: profile.diets) { profile.toggleDiet($0) }
+            section(title: "Diet preferences", count: profile.diets.count,
+                    expanded: $dietsExpanded) {
+                chipGrid(ProfileStore.dietOptions.map { ($0.key, $0.label) },
+                         selected: profile.diets) { profile.toggleDiet($0) }
+            }
+            section(title: "Allergens to flag", count: profile.allergens.count,
+                    expanded: $allergensExpanded) {
+                chipGrid(ProfileStore.allergenOptions.map { ($0.key, $0.label) },
+                         selected: profile.allergens) { profile.toggleAllergen($0) }
+            }
+        }
+    }
 
-            Text("Allergens to flag").font(.headline).padding(.top, 8)
-            chipGrid(ProfileStore.allergenOptions.map { ($0.key, $0.label) },
-                     selected: profile.allergens) { profile.toggleAllergen($0) }
+    @ViewBuilder
+    private func section<Content: View>(
+        title: String, count: Int, expanded: Binding<Bool>,
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
+        let label = title + (count > 0 ? "  (\(count) selected)" : "")
+        if collapsible {
+            DisclosureGroup(isExpanded: expanded) {
+                content().padding(.top, 8)
+            } label: {
+                Text(label).font(.headline).foregroundStyle(.primary)
+            }
+            .padding(.top, 8)
+        } else {
+            Text(label).font(.headline).padding(.top, 8)
+            content()
         }
     }
 
@@ -133,7 +158,7 @@ struct ProfileView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                PreferenceEditor()
+                PreferenceEditor(collapsible: true)
 
                 donationCard
                     .padding(.top, 24)
