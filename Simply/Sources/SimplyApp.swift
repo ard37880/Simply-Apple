@@ -2,46 +2,65 @@ import SwiftUI
 
 @main
 struct SimplyApp: App {
+    @StateObject private var profile = ProfileStore.shared
+    @StateObject private var history = HistoryStore.shared
+
     var body: some Scene {
         WindowGroup {
             RootView()
+                .environmentObject(profile)
+                .environmentObject(history)
         }
     }
 }
 
-/// Placeholder root while the full UI is built out — proves the core
-/// (models, scoring engine, repositories) compiles and runs.
 struct RootView: View {
-    @State private var barcode = ""
-    @State private var status = "Enter a barcode to test the pipeline"
+    @EnvironmentObject var profile: ProfileStore
+    @State private var path = NavigationPath()
+
+    enum Route: Hashable {
+        case product(String)
+        case history
+        case profile
+    }
 
     var body: some View {
-        VStack(spacing: 16) {
-            Text("Simply")
-                .font(.largeTitle.bold())
-            TextField("Barcode", text: $barcode)
-                .keyboardType(.numberPad)
-                .textFieldStyle(.roundedBorder)
-                .padding(.horizontal)
-            Button("Look up") {
-                Task {
-                    status = "Loading…"
-                    switch await ProductRepository.shared.lookup(barcode: barcode) {
-                    case .found(let product, let score):
-                        status = "\(product.name): \(score.total.map(String.init) ?? "?")/100 \(score.band?.rawValue ?? "")"
-                    case .notFound:
-                        status = "Not found"
-                    case .error(let message):
-                        status = message
+        if !profile.onboarded {
+            OnboardingView()
+        } else {
+            NavigationStack(path: $path) {
+                ScannerView { code in
+                    path.append(Route.product(code))
+                }
+                .navigationTitle("Simply")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { path.append(Route.history) } label: {
+                            Image(systemName: "clock.arrow.circlepath")
+                        }
+                    }
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { path.append(Route.profile) } label: {
+                            Image(systemName: "person.circle")
+                        }
+                    }
+                }
+                .navigationDestination(for: Route.self) { route in
+                    switch route {
+                    case .product(let barcode):
+                        ProductView(barcode: barcode) { code in
+                            path.append(Route.product(code))
+                        }
+                    case .history:
+                        HistoryView { code in
+                            path.append(Route.product(code))
+                        }
+                    case .profile:
+                        ProfileView()
                     }
                 }
             }
-            .buttonStyle(.borderedProminent)
-            Text(status)
-                .multilineTextAlignment(.center)
-                .padding()
-            Spacer()
         }
-        .padding(.top, 60)
     }
 }
