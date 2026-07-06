@@ -42,6 +42,8 @@ struct ProductView: View {
     @EnvironmentObject var profile: ProfileStore
     @State private var state: LoadState = .loading
     @State private var perServing = true
+    @State private var alternatives: [ProductRepository.Alternative] = []
+    @State private var showSubmit = false
 
     enum LoadState {
         case loading
@@ -59,9 +61,13 @@ struct ProductView: View {
                 VStack(spacing: 12) {
                     Text("Product not found")
                         .font(.headline)
-                    Text("Barcode \(barcode) isn't in the database yet.")
+                    Text("Barcode \(barcode) isn't in the database yet — you can be the first to add it.")
                         .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    Button("Add product photos") { showSubmit = true }
+                        .buttonStyle(.borderedProminent)
                 }
+                .padding()
             case .error(let message):
                 VStack(spacing: 12) {
                     Text(message)
@@ -74,6 +80,7 @@ struct ProductView: View {
         }
         .navigationTitle("Product")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showSubmit) { SubmitView(barcode: barcode) }
         .task { await load() }
     }
 
@@ -83,6 +90,8 @@ struct ProductView: View {
         case .found(let product, let score):
             perServing = product.servingQuantity != nil
             state = .loaded(product, score)
+            alternatives = await ProductRepository.shared
+                .alternatives(for: product, currentScore: score.total)
         case .notFound: state = .notFound
         case .error(let message): state = .error(message)
         }
@@ -138,6 +147,19 @@ struct ProductView: View {
                     ForEach(positives) { MetricRow(metric: $0, factor: servingFactor) }
                 }
 
+                if !alternatives.isEmpty {
+                    sectionHeading("Better options in this category")
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            ForEach(alternatives) { alternative in
+                                AlternativeCard(alternative: alternative) {
+                                    onProduct(alternative.barcode)
+                                }
+                            }
+                        }
+                    }
+                }
+
                 breakdown(score)
                 additivesSection(product, score)
 
@@ -147,6 +169,12 @@ struct ProductView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
+
+                Button("Wrong or missing data? Improve this product") {
+                    showSubmit = true
+                }
+                .font(.subheadline)
+                .padding(.top, 4)
 
                 Text(footerText(score.kind))
                     .font(.caption)
@@ -294,6 +322,43 @@ struct ProductView: View {
         case .food:
             return "Scores reflect EU/EFSA safety assessments and Nutri-Score nutrition data. Product data from the Open Food Facts community (ODbL)."
         }
+    }
+}
+
+struct AlternativeCard: View {
+    let alternative: ProductRepository.Alternative
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 4) {
+                AsyncImage(url: alternative.imageUrl) { image in
+                    image.resizable().aspectRatio(contentMode: .fit)
+                } placeholder: {
+                    RoundedRectangle(cornerRadius: 8).fill(.quaternary)
+                }
+                .frame(width: 130, height: 90)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                Text(alternative.name)
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                if let brand = alternative.brand {
+                    Text(brand).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                HStack(spacing: 6) {
+                    Circle().fill(alternative.band.color).frame(width: 10, height: 10)
+                    Text("\(alternative.score)/100 · \(alternative.band.rawValue)")
+                        .font(.caption)
+                }
+            }
+            .frame(width: 140)
+            .padding(10)
+            .background(Color(.secondarySystemBackground),
+                        in: RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
     }
 }
 

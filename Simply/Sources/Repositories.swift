@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 // MARK: - Risk database loading
 
@@ -241,6 +242,92 @@ final class ProductRepository {
         let score = ScoreEngine.score(product)
         HistoryStore.shared.record(product: product, score: score)
         return .found(product, score)
+    }
+
+    // MARK: Alternatives (better-scoring US products, same category)
+
+    struct Alternative: Identifiable {
+        var id: String { barcode }
+        let barcode: String
+        let name: String
+        let brand: String?
+        let imageUrl: URL?
+        let score: Int
+        let band: ScoreBand
+    }
+
+    func alternatives(for product: Product, currentScore: Int?) async -> [Alternative] {
+        guard product.kind == .food, let category = product.categoryTag else { return [] }
+        var components = URLComponents(
+            url: Self.offBase.appendingPathComponent("api/v2/search"),
+            resolvingAgainstBaseURL: false)!
+        components.queryItems = [
+            .init(name: "categories_tags", value: category),
+            .init(name: "countries_tags", value: "en:united-states"),
+            .init(name: "fields", value: "code,product_name,brands,quantity,image_front_url,nutriscore_grade,nova_group,additives_tags,labels_tags,categories_tags,ingredients_text,nutriments,serving_size,serving_quantity"),
+            .init(name: "page_size", value: "24"),
+        ]
+        var request = URLRequest(url: components.url!)
+        request.setValue("Simply-iOS/1.0 (Studio86)", forHTTPHeaderField: "User-Agent")
+        guard let (data, _) = try? await URLSession.shared.data(for: request),
+              let response = try? JSONDecoder().decode(SearchResponse.self, from: data)
+        else { return [] }
+
+        let floor = max((currentScore ?? 0) + 15, 50)
+        var seenNames = Set<String>()
+        var results: [Alternative] = []
+        for dto in response.products ?? [] {
+            guard let code = dto.code, code != product.barcode else { continue }
+            let candidate = Self.toDomain(dto, barcode: code, sourceDb: nil)
+            let score = ScoreEngine.score(candidate)
+            guard let total = score.total, total >= floor,
+                  let band = score.band,
+                  seenNames.insert(candidate.name.lowercased()).inserted
+            else { continue }
+            results.append(Alternative(
+                barcode: code, name: candidate.name, brand: candidate.brand,
+                imageUrl: candidate.imageUrl, score: total, band: band))
+        }
+        return Array(results.sorted { $0.score > $1.score }.prefix(6))
+    }
+
+    // MARK: Submissions (photos + verified ingredient text)
+
+    func submitPhoto(barcode: String, field: String, image: UIImage) async -> Bool {
+        let resized = image.resized(maxDimension: 2048)
+        guard let jpeg = resized.jpegData(compressionQuality: 0.85) else { return false }
+
+        let boundary = "SimplyBoundary-\(UUID().uuidString)"
+        var body = Data()
+        func append(_ string: String) { body.append(Data(string.utf8)) }
+        append("--\(boundary)\r\nContent-Disposition: form-data; name=\"imagefield\"\r\n\r\n\(field)\r\n")
+        append("--\(boundary)\r\nContent-Disposition: form-data; name=\"photo\"; filename=\"\(field).jpg\"\r\nContent-Type: image/jpeg\r\n\r\n")
+        body.append(jpeg)
+        append("\r\n--\(boundary)--\r\n")
+
+        var request = URLRequest(
+            url: Self.serverBase.appendingPathComponent("api/v2/product/\(barcode)/photos"))
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)",
+                         forHTTPHeaderField: "Content-Type")
+        request.httpBody = body
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse
+        else { return false }
+        return (200..<300).contains(http.statusCode)
+    }
+
+    func submitFacts(barcode: String, ingredientsText: String) async -> Bool {
+        var request = URLRequest(
+            url: Self.serverBase.appendingPathComponent("api/v2/product/\(barcode)/facts"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(
+            withJSONObject: ["ingredients_text": ingredientsText])
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse
+        else { return false }
+        return (200..<300).contains(http.statusCode)
     }
 
     static func toDomain(_ dto: ProductDTO, barcode: String, sourceDb: String?) -> Product {
