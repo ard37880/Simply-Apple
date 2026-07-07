@@ -303,6 +303,8 @@ struct ProductView: View {
                              score.nutritionKnown ? "\(score.nutritionPoints) / 60" : "no data")
                 breakdownRow("Additives",
                              score.additivesKnown ? "\(score.additivePoints) / 30" : "no data")
+                breakdownRow("Processing (NOVA)",
+                             score.processingKnown ? "\(score.processingPoints) / 10" : "no data")
             }
             if score.cappedByBanned {
                 Text("Score capped because an EU-banned ingredient is present.")

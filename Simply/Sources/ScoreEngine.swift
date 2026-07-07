@@ -29,6 +29,9 @@ struct ScoreResult {
     let kind: ProductKind
     /// Diet-reweighted total; nil when the profile has no reweighting diets.
     var personalized: Int? = nil
+    /// Ultra-processing axis (NOVA); excluded when the group is unknown.
+    var processingKnown: Bool = false
+    var processingPoints: Int = 0    // 0..10, meaningful only when known
 
     var ingredientBased: Bool { kind != .food }
 
@@ -69,6 +72,7 @@ struct NutritionWeights: Equatable {
         "carnivore": NutritionWeights(satFat: 0.5, protein: 1.5),
         "paleo": NutritionWeights(sugar: 1.5, sweetener: 1.5),
         "low_sodium": NutritionWeights(sodium: 2.0),
+        "anti_inflammatory": NutritionWeights(sugar: 1.5, sweetener: 1.5),
         "no_artificial_sweeteners": NutritionWeights(sweetener: 2.0),
     ]
 
@@ -101,11 +105,11 @@ struct NutritionWeights: Equatable {
 /// Nutri-Score (2017 algorithm) fallback when the database has no grade.
 enum NutriScore {
 
-    /// The Simply nutrition model (0..60): nutrient thresholds plus
-    /// ultra-processing (NOVA) and artificial-sweetener penalties.
+    /// The Simply nutrition model (0..60): nutrient thresholds plus an
+    /// artificial-sweetener penalty. Ultra-processing is scored separately
+    /// as the NOVA axis in ScoreEngine.
     static func simplyPoints(
         _ n: Nutriments,
-        novaGroup: Int?,
         sweetener: Bool,
         weights w: NutritionWeights = .neutral
     ) -> Int? {
@@ -119,7 +123,6 @@ enum NutriScore {
         if let kcal = n.energyKcal { pts -= w.calories * Double(kcal <= 160 ? 0 : kcal <= 330 ? 3 : kcal <= 500 ? 6 : 9) }
         if let fiber = n.fiber { pts += w.fiber * Double(fiber >= 3.5 ? 4 : fiber >= 1.5 ? 2 : 0) }
         if let protein = n.proteins { pts += w.protein * Double(protein >= 8 ? 4 : protein >= 4 ? 2 : 0) }
-        if novaGroup == 4 { pts -= 8 } else if novaGroup == 3 { pts -= 3 }
         if sweetener { pts -= w.sweetener * 6 }
         return min(max(Int(pts.rounded()), 0), 60)
     }
@@ -188,10 +191,10 @@ enum NutriScore {
 }
 
 /// Composite score — identical rules to the Android app:
-/// food = 60 nutrition + 30 additives, renormalized over known axes;
-/// other verticals score purely on ingredient safety. Organic
-/// certification is displayed but earns no points.
-/// High-risk caps at 49; anything EU-banned caps at 24.
+/// food = 60 nutrition + 30 additives + 10 processing (NOVA),
+/// renormalized over known axes; other verticals score purely on
+/// ingredient safety. Organic certification is displayed but earns no
+/// points. High-risk caps at 49; anything EU-banned caps at 24.
 enum ScoreEngine {
 
     static let bannedCap = 24
@@ -207,12 +210,26 @@ enum ScoreEngine {
         let sweetenerEs: Set<String> = ["E950","E951","E952","E954","E955","E961","E962","E969"]
         let sweetener = product.additives.contains { sweetenerEs.contains($0.eNumber.uppercased()) }
         let nutritionPts = product.nutriments.flatMap {
-            NutriScore.simplyPoints($0, novaGroup: product.novaGroup, sweetener: sweetener)
+            NutriScore.simplyPoints($0, sweetener: sweetener)
         }
         let nutritionKnown = nutritionPts != nil
         let nutritionPoints = nutritionPts ?? 0
         let estimated = false
         let grade: Character? = nil
+
+        // Processing: 0..10 from the product's NOVA group (1 = unprocessed
+        // or minimally processed food, 4 = ultra-processed). Its own axis
+        // so ultra-processing visibly costs points instead of hiding as a
+        // small nutrition deduction; excluded and renormalized when the
+        // database has no NOVA group.
+        let processingKnown = (1...4).contains(product.novaGroup ?? 0)
+        let processingPoints: Int
+        switch product.novaGroup {
+        case 1: processingPoints = 10
+        case 2: processingPoints = 7
+        case 3: processingPoints = 4
+        default: processingPoints = 0
+        }
 
         let additivesKnown = product.hasAdditiveData
         let worstRisk = (product.additives.map(\.effectiveRisk) +
@@ -236,6 +253,7 @@ enum ScoreEngine {
         var availableMax = 0
         if nutritionKnown { earned += nutritionPoints; availableMax += 60 }
         if additivesKnown { earned += additivePoints; availableMax += 30 }
+        if processingKnown { earned += processingPoints; availableMax += 10 }
 
         var total: Int? = (!nutritionKnown && !additivesKnown)
             ? nil
@@ -258,11 +276,11 @@ enum ScoreEngine {
         let weights = NutritionWeights.forDiets(diets)
         if !weights.isNeutral, nutritionKnown, let standard = total,
            let pNutrition = product.nutriments.flatMap({
-               NutriScore.simplyPoints($0, novaGroup: product.novaGroup,
-                                       sweetener: sweetener, weights: weights)
+               NutriScore.simplyPoints($0, sweetener: sweetener, weights: weights)
            }) {
             var pEarned = pNutrition
             if additivesKnown { pEarned += additivePoints }
+            if processingKnown { pEarned += processingPoints }
             var pTotal = Int((Double(pEarned) * 100.0 / Double(availableMax)).rounded())
             pTotal = min(max(pTotal, standard - personalizationSwing), standard + personalizationSwing)
             if worstRisk == .high { pTotal = min(pTotal, highRiskCap) }
@@ -284,7 +302,9 @@ enum ScoreEngine {
             euRestricted: restricted,
             cappedByBanned: cappedByBanned,
             kind: .food,
-            personalized: personalized
+            personalized: personalized,
+            processingKnown: processingKnown,
+            processingPoints: processingPoints
         )
     }
 

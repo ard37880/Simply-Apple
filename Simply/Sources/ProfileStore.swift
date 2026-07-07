@@ -62,6 +62,7 @@ final class ProfileStore: ObservableObject {
         .init(key: "keto", label: "Keto / low-carb"),
         .init(key: "paleo", label: "Paleo"),
         .init(key: "low_sodium", label: "Low sodium"),
+        .init(key: "anti_inflammatory", label: "Anti-inflammatory"),
         .init(key: "no_pork", label: "No pork"),
         .init(key: "no_beef", label: "No beef"),
         .init(key: "no_alcohol", label: "No alcohol"),
@@ -200,6 +201,27 @@ enum PreferenceChecker {
         }
 
         let eNumbers = Set(product.additives.map { $0.eNumber.uppercased() })
+
+        if diets.contains("anti_inflammatory") {
+            if let sugars = product.nutriments?.sugars, sugars > 13.5 {
+                hits.append(.init(
+                    label: "High sugar — not anti-inflammatory friendly (\(Int(sugars)) g/100 g)",
+                    severity: .contains))
+            }
+            if text.contains("hydrogenated") {
+                hits.append(.init(
+                    label: "Contains hydrogenated oils (pro-inflammatory fats)",
+                    severity: .contains))
+            }
+            if !eNumbers.isDisjoint(with: ["E249", "E250", "E251", "E252"]) {
+                hits.append(.init(
+                    label: "Contains nitrites/nitrates (processed-meat preservatives)",
+                    severity: .contains))
+            }
+            if product.novaGroup == 4 {
+                hits.append(.init(label: "Ultra-processed (NOVA 4)", severity: .likely))
+            }
+        }
 
         if diets.contains("no_seed_oils") {
             let named = ["canola", "rapeseed", "soybean oil", "corn oil", "sunflower oil",
