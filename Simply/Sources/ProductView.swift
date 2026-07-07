@@ -91,7 +91,7 @@ struct ProductView: View {
             perServing = product.servingQuantity != nil
             state = .loaded(product, score)
             alternatives = await ProductRepository.shared
-                .alternatives(for: product, currentScore: score.total)
+                .alternatives(for: product, currentScore: score.displayTotal)
         case .notFound: state = .notFound
         case .error(let message): state = .error(message)
         }
@@ -145,6 +145,13 @@ struct ProductView: View {
                             .foregroundStyle(Color.riskNone)
                     }
                     ForEach(positives) { MetricRow(metric: $0, factor: servingFactor) }
+                }
+
+                if !score.ingredientBased, let summary = Self.perServingSummary(product) {
+                    Text(summary)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 6)
                 }
 
                 if !alternatives.isEmpty {
@@ -313,7 +320,47 @@ struct ProductView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
+            if score.kind == .food {
+                EuStandardExplainer()
+            }
         }
+    }
+
+    /// One-line "what a serving means against a day" summary. Adult daily
+    /// reference amounts: sugars 50 g, saturated fat 20 g, sodium 2300 mg,
+    /// energy 2000 kcal. Display only — the score stays per-100g based.
+    static func perServingSummary(_ product: Product) -> String? {
+        guard let serving = product.servingQuantity, serving > 0,
+              let n = product.nutriments else { return nil }
+        let factor = serving / 100.0
+        func amount(_ v: Double) -> String {
+            v < 10 ? String(format: "%.1f", v) : "\(Int(v.rounded()))"
+        }
+        func pct(_ v: Double, _ reference: Double) -> String {
+            "\(Int((v / reference * 100).rounded()))"
+        }
+        var parts: [String] = []
+        if let sugars = n.sugars {
+            let v = sugars * factor
+            parts.append("\(amount(v)) g sugar (\(pct(v, 50))% of daily reference)")
+        }
+        if let satFat = n.saturatedFat {
+            let v = satFat * factor
+            parts.append("\(amount(v)) g sat fat (\(pct(v, 20))%)")
+        }
+        if let sodium = n.sodium ?? n.salt.map({ $0 / 2.5 }) {
+            let v = sodium * 1000 * factor
+            parts.append("\(Int(v.rounded())) mg sodium (\(pct(v, 2300))%)")
+        }
+        if let kcal = n.energyKcal {
+            let v = kcal * factor
+            parts.append("\(Int(v.rounded())) kcal (\(pct(v, 2000))%)")
+        }
+        guard !parts.isEmpty else { return nil }
+        let servingText = serving == serving.rounded()
+            ? "\(Int(serving))" : String(format: "%.1f", serving)
+        // The first entry carries the "of daily reference" wording for all.
+        return "Per \(servingText) g serving: \(parts.joined(separator: " · "))"
     }
 
     private func sectionHeading(_ text: String) -> some View {
@@ -377,19 +424,21 @@ struct AlternativeCard: View {
 
 struct ScoreRing: View {
     let score: ScoreResult
+    @State private var showStandard = false
 
     var body: some View {
-        let color = score.band?.color ?? .gray
+        let shownTotal = score.displayTotal
+        let color = score.displayBand?.color ?? .gray
         VStack(spacing: 6) {
             ZStack {
                 Circle().stroke(color.opacity(0.2), lineWidth: 8)
-                if let total = score.total {
+                if let total = shownTotal {
                     Circle()
                         .trim(from: 0, to: CGFloat(total) / 100)
                         .stroke(color, style: StrokeStyle(lineWidth: 8, lineCap: .round))
                         .rotationEffect(.degrees(-90))
                 }
-                Text(score.total.map(String.init) ?? "?")
+                Text(shownTotal.map(String.init) ?? "?")
                     .font(.title3.bold())
                     .foregroundStyle(color)
             }
@@ -397,7 +446,58 @@ struct ScoreRing: View {
             Text(score.displayLabel)
                 .font(.caption.bold())
                 .foregroundStyle(color)
+            if score.personalized != nil {
+                Text("Personalized")
+                    .font(.caption2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(Color(.secondarySystemBackground), in: Capsule())
+                if showStandard, let standard = score.total {
+                    Text("Standard score: \(standard)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if score.personalized != nil { showStandard.toggle() }
+        }
+    }
+}
+
+// MARK: - "Why the European standard?" explainer
+
+let euStandardExplainer =
+    "Simply rates additives against the European Union's food-safety " +
+    "system, the strictest widely adopted in the world. The EU reviews " +
+    "additives before they reach shelves and withdraws approval when new " +
+    "evidence raises doubt — a precautionary approach. In the US, an " +
+    "additive can stay in food while evidence is re-examined.\n\n" +
+    "Titanium dioxide (E171) was withdrawn in the EU in 2022 but remains " +
+    "legal in the US. Potassium bromate is not permitted in the EU, " +
+    "Canada, or Japan, yet still appears in some US breads.\n\n" +
+    "An EU flag doesn't mean a product is acutely dangerous — dose " +
+    "matters. That's why Simply also estimates, where reliable intake " +
+    "limits exist, how much of an additive one serving contains. " +
+    "Sources: EFSA, SCCS, Health Canada, Japan's MHLW."
+
+struct EuStandardExplainer: View {
+    @State private var expanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button("Why the European standard?") {
+                expanded.toggle()
+            }
+            .font(.footnote)
+            if expanded {
+                Text(euStandardExplainer)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.top, 4)
     }
 }
 

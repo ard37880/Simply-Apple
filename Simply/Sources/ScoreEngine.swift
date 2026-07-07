@@ -28,15 +28,74 @@ struct ScoreResult {
     let euRestricted: [Additive]
     let cappedByBanned: Bool
     let kind: ProductKind
+    /// Diet-reweighted total; nil when the profile has no reweighting diets.
+    var personalized: Int? = nil
 
     var ingredientBased: Bool { kind != .food }
+
+    /// The score to show: personalized when the profile calls for it.
+    var displayTotal: Int? { personalized ?? total }
+    var displayBand: ScoreBand? { displayTotal.map(ScoreBand.forScore) }
+
     var displayLabel: String {
-        guard total != nil, let band else { return "No data" }
+        guard displayTotal != nil, let shownBand = displayBand else { return "No data" }
         return (euBanned.count + euRestricted.count) >= 2
-            ? "Multiple concerns flagged" : band.rawValue
+            ? "Multiple concerns flagged" : shownBand.rawValue
     }
     var isPartial: Bool {
         total != nil && !ingredientBased && (!nutritionKnown || !additivesKnown)
+    }
+}
+
+/// Per-component multipliers for the Simply nutrition model, driven by the
+/// user's diet preferences. 1.0 everywhere = the standard score. Weights
+/// scale deductions and bonuses alike: a 2.0 sugar weight doubles the
+/// sugar deduction; a 1.5 protein weight raises the protein bonus.
+struct NutritionWeights: Equatable {
+    var sugar = 1.0
+    var satFat = 1.0
+    var sodium = 1.0
+    var calories = 1.0
+    var fiber = 1.0
+    var protein = 1.0
+    var sweetener = 1.0
+
+    static let neutral = NutritionWeights()
+    var isNeutral: Bool { self == .neutral }
+
+    // Diet-pattern reweighting only — there is deliberately no
+    // calorie-minimization or weight-loss preference.
+    private static let dietWeights: [String: NutritionWeights] = [
+        "keto": NutritionWeights(sugar: 2.0, satFat: 0.5, calories: 0.5),
+        "carnivore": NutritionWeights(satFat: 0.5, protein: 1.5),
+        "paleo": NutritionWeights(sugar: 1.5, sweetener: 1.5),
+        "low_sodium": NutritionWeights(sodium: 2.0),
+        "no_artificial_sweeteners": NutritionWeights(sweetener: 2.0),
+    ]
+
+    /// Active diets multiply per component, clamped to [0.5, 2.0].
+    static func forDiets(_ diets: Set<String>) -> NutritionWeights {
+        var w = NutritionWeights.neutral
+        for key in diets {
+            guard let m = dietWeights[key] else { continue }
+            w.sugar *= m.sugar
+            w.satFat *= m.satFat
+            w.sodium *= m.sodium
+            w.calories *= m.calories
+            w.fiber *= m.fiber
+            w.protein *= m.protein
+            w.sweetener *= m.sweetener
+        }
+        func clamp(_ v: Double) -> Double { min(max(v, 0.5), 2.0) }
+        return NutritionWeights(
+            sugar: clamp(w.sugar),
+            satFat: clamp(w.satFat),
+            sodium: clamp(w.sodium),
+            calories: clamp(w.calories),
+            fiber: clamp(w.fiber),
+            protein: clamp(w.protein),
+            sweetener: clamp(w.sweetener)
+        )
     }
 }
 
@@ -45,20 +104,25 @@ enum NutriScore {
 
     /// The Simply nutrition model (0..60): nutrient thresholds plus
     /// ultra-processing (NOVA) and artificial-sweetener penalties.
-    static func simplyPoints(_ n: Nutriments, novaGroup: Int?, sweetener: Bool) -> Int? {
+    static func simplyPoints(
+        _ n: Nutriments,
+        novaGroup: Int?,
+        sweetener: Bool,
+        weights w: NutritionWeights = .neutral
+    ) -> Int? {
         guard let sugars = n.sugars, let satFat = n.saturatedFat,
               let sodiumMg = (n.sodium ?? n.salt.map { $0 / 2.5 }).map({ $0 * 1000 })
         else { return nil }
-        var pts = 60
-        pts -= sugars <= 5 ? 0 : sugars <= 13.5 ? 6 : sugars <= 22.5 ? 12 : 18
-        pts -= satFat <= 1.5 ? 0 : satFat <= 3.25 ? 5 : satFat <= 5 ? 10 : 15
-        pts -= sodiumMg <= 120 ? 0 : sodiumMg <= 360 ? 5 : sodiumMg <= 600 ? 10 : 15
-        if let kcal = n.energyKcal { pts -= kcal <= 160 ? 0 : kcal <= 330 ? 3 : kcal <= 500 ? 6 : 9 }
-        if let fiber = n.fiber { pts += fiber >= 3.5 ? 4 : fiber >= 1.5 ? 2 : 0 }
-        if let protein = n.proteins { pts += protein >= 8 ? 4 : protein >= 4 ? 2 : 0 }
+        var pts = 60.0
+        pts -= w.sugar * Double(sugars <= 5 ? 0 : sugars <= 13.5 ? 6 : sugars <= 22.5 ? 12 : 18)
+        pts -= w.satFat * Double(satFat <= 1.5 ? 0 : satFat <= 3.25 ? 5 : satFat <= 5 ? 10 : 15)
+        pts -= w.sodium * Double(sodiumMg <= 120 ? 0 : sodiumMg <= 360 ? 5 : sodiumMg <= 600 ? 10 : 15)
+        if let kcal = n.energyKcal { pts -= w.calories * Double(kcal <= 160 ? 0 : kcal <= 330 ? 3 : kcal <= 500 ? 6 : 9) }
+        if let fiber = n.fiber { pts += w.fiber * Double(fiber >= 3.5 ? 4 : fiber >= 1.5 ? 2 : 0) }
+        if let protein = n.proteins { pts += w.protein * Double(protein >= 8 ? 4 : protein >= 4 ? 2 : 0) }
         if novaGroup == 4 { pts -= 8 } else if novaGroup == 3 { pts -= 3 }
-        if sweetener { pts -= 6 }
-        return min(max(pts, 0), 60)
+        if sweetener { pts -= w.sweetener * 6 }
+        return min(max(Int(pts.rounded()), 0), 60)
     }
 
     static func computeGrade(_ n: Nutriments, isBeverage: Bool) -> Character? {
@@ -133,7 +197,11 @@ enum ScoreEngine {
     static let bannedCap = 24
     static let highRiskCap = 49
 
-    static func score(_ product: Product) -> ScoreResult {
+    // A personalized score may move at most this far from the standard
+    // one, so reweighting can shift a band but never invent a verdict.
+    static let personalizationSwing = 12
+
+    static func score(_ product: Product, diets: Set<String> = []) -> ScoreResult {
         if product.kind != .food { return scoreByIngredients(product) }
 
         let sweetenerEs: Set<String> = ["E950","E951","E952","E954","E955","E961","E962","E969"]
@@ -183,6 +251,25 @@ enum ScoreEngine {
             total = min(max(t, 0), 100)
         }
 
+        // Personalization reweights only the nutrition axis, is bounded to
+        // ±personalizationSwing of the standard score, and the absolute
+        // additive caps still win afterwards.
+        var personalized: Int? = nil
+        let weights = NutritionWeights.forDiets(diets)
+        if !weights.isNeutral, nutritionKnown, let standard = total,
+           let pNutrition = product.nutriments.flatMap({
+               NutriScore.simplyPoints($0, novaGroup: product.novaGroup,
+                                       sweetener: sweetener, weights: weights)
+           }) {
+            var pEarned = organicPoints + pNutrition
+            if additivesKnown { pEarned += additivePoints }
+            var pTotal = Int((Double(pEarned) * 100.0 / Double(availableMax)).rounded())
+            pTotal = min(max(pTotal, standard - personalizationSwing), standard + personalizationSwing)
+            if worstRisk == .high { pTotal = min(pTotal, highRiskCap) }
+            if !banned.isEmpty { pTotal = min(pTotal, bannedCap) }
+            personalized = min(max(pTotal, 0), 100)
+        }
+
         return ScoreResult(
             total: total,
             band: total.map(ScoreBand.forScore),
@@ -197,7 +284,8 @@ enum ScoreEngine {
             euBanned: banned,
             euRestricted: restricted,
             cappedByBanned: cappedByBanned,
-            kind: .food
+            kind: .food,
+            personalized: personalized
         )
     }
 

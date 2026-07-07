@@ -16,7 +16,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.studio86.simply
         MARKETING_VERSION: "1.3"
-        CURRENT_PROJECT_VERSION: 5
+        CURRENT_PROJECT_VERSION: 6
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_NSCameraUsageDescription: "Simply uses the camera to scan product barcodes and label photos."
         INFOPLIST_KEY_UILaunchScreen_Generation: YES

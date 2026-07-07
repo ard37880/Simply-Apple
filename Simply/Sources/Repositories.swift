@@ -325,7 +325,9 @@ final class ProductRepository {
         guard response.status == 1, let dto = response.product else { return .notFound }
 
         let product = Self.toDomain(dto, barcode: barcode, sourceDb: response.simply_source)
-        let score = ScoreEngine.score(product)
+        let score = ScoreEngine.score(product, diets: ProfileStore.shared.diets)
+        // History keeps the standard score so past scans stay stable when
+        // preferences change.
         HistoryStore.shared.record(product: product, score: score)
         return .found(product, score)
     }
@@ -359,15 +361,16 @@ final class ProductRepository {
               let response = try? JSONDecoder().decode(SearchResponse.self, from: data)
         else { return [] }
 
+        let diets = ProfileStore.shared.diets
         let floor = max((currentScore ?? 0) + 15, 50)
         var seenNames = Set<String>()
         var results: [Alternative] = []
         for dto in response.products ?? [] {
             guard let code = dto.code, code != product.barcode else { continue }
             let candidate = Self.toDomain(dto, barcode: code, sourceDb: nil)
-            let score = ScoreEngine.score(candidate)
-            guard let total = score.total, total >= floor,
-                  let band = score.band,
+            let score = ScoreEngine.score(candidate, diets: diets)
+            guard let total = score.displayTotal, total >= floor,
+                  let band = score.displayBand,
                   seenNames.insert(candidate.name.lowercased()).inserted
             else { continue }
             results.append(Alternative(
