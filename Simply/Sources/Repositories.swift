@@ -407,11 +407,13 @@ final class ProductRepository {
     }
 
     func submitFacts(
-        barcode: String, ingredientsText: String? = nil, stores: String? = nil
+        barcode: String, ingredientsText: String? = nil, stores: String? = nil,
+        storesRegion: String? = nil
     ) async -> Bool {
         var payload: [String: String] = [:]
         if let ingredientsText { payload["ingredients_text"] = ingredientsText }
         if let stores { payload["stores"] = stores }
+        if let storesRegion { payload["stores_region"] = storesRegion }
         var request = URLRequest(
             url: Self.serverBase.appendingPathComponent("api/v2/product/\(barcode)/facts"))
         request.httpMethod = "POST"

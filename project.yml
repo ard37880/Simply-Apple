@@ -15,10 +15,11 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.studio86.simply
-        MARKETING_VERSION: "1.3"
-        CURRENT_PROJECT_VERSION: 6
+        MARKETING_VERSION: "1.4"
+        CURRENT_PROJECT_VERSION: 7
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_NSCameraUsageDescription: "Simply uses the camera to scan product barcodes and label photos."
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Simply adds a coarse city-level tag to store reports you submit, so store availability can roll out by region."
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         TARGETED_DEVICE_FAMILY: "1"

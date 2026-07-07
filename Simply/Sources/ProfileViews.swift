@@ -1,5 +1,6 @@
 import SwiftUI
 import SafariServices
+import UserNotifications
 
 // MARK: - Shared preference editor
 
@@ -160,6 +161,39 @@ struct ProfileView: View {
 
                 PreferenceEditor(collapsible: true)
 
+                Text("Alerts & location")
+                    .font(.headline)
+                    .padding(.top, 24)
+                PermissionToggleRow(
+                    title: "Recall alerts",
+                    description: "Notifies you if a product you scanned is recalled "
+                        + "(US FDA). Your scan list is sent to the Simply server to "
+                        + "check — nothing else.",
+                    isOn: Binding(
+                        get: { profile.recallAlerts },
+                        set: { on in
+                            profile.recallAlerts = on
+                            if on {
+                                UNUserNotificationCenter.current().requestAuthorization(
+                                    options: [.alert, .sound]) { _, _ in }
+                            }
+                        }
+                    )
+                )
+                PermissionToggleRow(
+                    title: "Tag store reports with your area",
+                    description: "Adds a coarse \"City, State\" to store submissions "
+                        + "so availability can roll out by region. Used only when you "
+                        + "submit, never stored otherwise.",
+                    isOn: Binding(
+                        get: { profile.locationTagging },
+                        set: { on in
+                            profile.locationTagging = on
+                            if on { LocationTagger.shared.requestPermission() }
+                        }
+                    )
+                )
+
                 donationCard
                     .padding(.top, 24)
 
@@ -248,4 +282,22 @@ struct SafariView: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ controller: SFSafariViewController, context: Context) {}
+}
+
+struct PermissionToggleRow: View {
+    let title: String
+    let description: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Toggle(isOn: $isOn) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                Text(description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
+    }
 }

@@ -186,7 +186,13 @@ struct ProductView: View {
                 Text(footerText(score.kind))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .padding(.vertical, 16)
+                    .padding(.top, 16)
+
+                Text(disclaimerText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 4)
+                    .padding(.bottom, 16)
             }
             .padding(.horizontal)
         }
@@ -380,6 +386,12 @@ struct ProductView: View {
         case .food:
             return "Scores reflect EU/EFSA safety assessments and the Simply nutrition model. Product data from the Open Food Facts community (ODbL)."
         }
+    }
+
+    private var disclaimerText: String {
+        "Scores summarize cited regulatory assessments of ingredients and " +
+        "nutrition data — they aren't medical advice. Full methodology at " +
+        "simply.studio86.dev/methodology.html"
     }
 }
 

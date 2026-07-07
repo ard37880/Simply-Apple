@@ -21,6 +21,10 @@ final class ProfileStore: ObservableObject {
 
     @AppStorage("profile.name") var name: String = ""
     @AppStorage("profile.onboarded") var onboarded: Bool = false
+    /// Check scan history against FDA recalls and notify.
+    @AppStorage("profile.recallAlerts") var recallAlerts: Bool = false
+    /// Tag store submissions with a coarse "City, State".
+    @AppStorage("profile.locationTagging") var locationTagging: Bool = false
     @AppStorage("profile.diets") private var dietsRaw: String = ""
     @AppStorage("profile.allergens") private var allergensRaw: String = ""
 

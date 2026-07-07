@@ -10,6 +10,10 @@ struct SimplyApp: App {
             RootView()
                 .environmentObject(profile)
                 .environmentObject(history)
+                .task {
+                    // One recall check per app open; no-op unless opted in.
+                    await RecallChecker.checkAndNotify()
+                }
         }
     }
 }

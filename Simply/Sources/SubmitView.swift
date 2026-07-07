@@ -215,10 +215,16 @@ struct SubmitView: View {
             let storeName = store.trimmingCharacters(in: .whitespaces)
             var factsOk: Bool?
             if !ingredients.isEmpty || !storeName.isEmpty {
+                // Coarse "City, State" tag, only when a store is being
+                // reported and the user opted in.
+                let region = (!storeName.isEmpty && ProfileStore.shared.locationTagging)
+                    ? await LocationTagger.shared.region()
+                    : nil
                 factsOk = await ProductRepository.shared.submitFacts(
                     barcode: barcode,
                     ingredientsText: ingredients.isEmpty ? nil : ingredients,
-                    stores: storeName.isEmpty ? nil : storeName)
+                    stores: storeName.isEmpty ? nil : storeName,
+                    storesRegion: region)
             }
             saving = false
             if !captured.isEmpty, okPhotos < captured.count {
