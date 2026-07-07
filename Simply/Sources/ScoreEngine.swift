@@ -1,7 +1,7 @@
 import Foundation
 
 enum ScoreBand: String {
-    case excellent = "Excellent", good = "Good", poor = "Poor", bad = "Bad"
+    case excellent = "No concerns", good = "Low concern", poor = "Moderate concern", bad = "High concern"
 
     static func forScore(_ score: Int) -> ScoreBand {
         switch score {
@@ -30,6 +30,11 @@ struct ScoreResult {
     let kind: ProductKind
 
     var ingredientBased: Bool { kind != .food }
+    var displayLabel: String {
+        guard total != nil, let band else { return "No data" }
+        return (euBanned.count + euRestricted.count) >= 2
+            ? "Multiple concerns flagged" : band.rawValue
+    }
     var isPartial: Bool {
         total != nil && !ingredientBased && (!nutritionKnown || !additivesKnown)
     }
@@ -37,6 +42,24 @@ struct ScoreResult {
 
 /// Nutri-Score (2017 algorithm) fallback when the database has no grade.
 enum NutriScore {
+
+    /// The Simply nutrition model (0..60): nutrient thresholds plus
+    /// ultra-processing (NOVA) and artificial-sweetener penalties.
+    static func simplyPoints(_ n: Nutriments, novaGroup: Int?, sweetener: Bool) -> Int? {
+        guard let sugars = n.sugars, let satFat = n.saturatedFat,
+              let sodiumMg = (n.sodium ?? n.salt.map { $0 / 2.5 }).map({ $0 * 1000 })
+        else { return nil }
+        var pts = 60
+        pts -= sugars <= 5 ? 0 : sugars <= 13.5 ? 6 : sugars <= 22.5 ? 12 : 18
+        pts -= satFat <= 1.5 ? 0 : satFat <= 3.25 ? 5 : satFat <= 5 ? 10 : 15
+        pts -= sodiumMg <= 120 ? 0 : sodiumMg <= 360 ? 5 : sodiumMg <= 600 ? 10 : 15
+        if let kcal = n.energyKcal { pts -= kcal <= 160 ? 0 : kcal <= 330 ? 3 : kcal <= 500 ? 6 : 9 }
+        if let fiber = n.fiber { pts += fiber >= 3.5 ? 4 : fiber >= 1.5 ? 2 : 0 }
+        if let protein = n.proteins { pts += protein >= 8 ? 4 : protein >= 4 ? 2 : 0 }
+        if novaGroup == 4 { pts -= 8 } else if novaGroup == 3 { pts -= 3 }
+        if sweetener { pts -= 6 }
+        return min(max(pts, 0), 60)
+    }
 
     static func computeGrade(_ n: Nutriments, isBeverage: Bool) -> Character? {
         guard let energyKj = n.energyKj ?? n.energyKcal.map({ $0 * 4.184 }),
@@ -113,14 +136,15 @@ enum ScoreEngine {
     static func score(_ product: Product) -> ScoreResult {
         if product.kind != .food { return scoreByIngredients(product) }
 
-        var estimated = false
-        var grade = product.nutriScoreGrade
-        if grade == nil, let n = product.nutriments {
-            grade = NutriScore.computeGrade(n, isBeverage: product.isBeverage)
-            if grade != nil { estimated = true }
+        let sweetenerEs: Set<String> = ["E950","E951","E952","E954","E955","E961","E962","E969"]
+        let sweetener = product.additives.contains { sweetenerEs.contains($0.eNumber.uppercased()) }
+        let nutritionPts = product.nutriments.flatMap {
+            NutriScore.simplyPoints($0, novaGroup: product.novaGroup, sweetener: sweetener)
         }
-        let nutritionKnown = grade != nil
-        let nutritionPoints = grade.map(NutriScore.nutritionPoints(for:)) ?? 0
+        let nutritionKnown = nutritionPts != nil
+        let nutritionPoints = nutritionPts ?? 0
+        let estimated = false
+        let grade: Character? = nil
 
         let additivesKnown = product.hasAdditiveData
         let worstRisk = product.additives.map(\.effectiveRisk).max()

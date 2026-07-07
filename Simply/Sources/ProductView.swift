@@ -259,10 +259,8 @@ struct ProductView: View {
                 breakdownRow("EU-banned ingredients", "\(score.euBanned.count)")
                 breakdownRow("EU-restricted ingredients", "\(score.euRestricted.count)")
             } else {
-                breakdownRow(
-                    "Nutrition" + (score.nutriScoreGrade.map { " (Nutri-Score \(String($0).uppercased()))" } ?? "")
-                        + (score.nutritionEstimated ? " — estimated" : ""),
-                    score.nutritionKnown ? "\(score.nutritionPoints) / 60" : "no data")
+                breakdownRow("Nutrition (Simply model)",
+                             score.nutritionKnown ? "\(score.nutritionPoints) / 60" : "no data")
                 breakdownRow("Additives",
                              score.additivesKnown ? "\(score.additivePoints) / 30" : "no data")
                 breakdownRow("Organic", "\(score.organicPoints) / 10")
@@ -320,7 +318,7 @@ struct ProductView: View {
         case .household:
             return "Ratings reflect EU CLP/REACH classifications and the Detergent Regulation. Product data from the Open Products Facts community (ODbL)."
         case .food:
-            return "Scores reflect EU/EFSA safety assessments and Nutri-Score nutrition data. Product data from the Open Food Facts community (ODbL)."
+            return "Scores reflect EU/EFSA safety assessments and the Simply nutrition model. Product data from the Open Food Facts community (ODbL)."
         }
     }
 }
@@ -383,7 +381,7 @@ struct ScoreRing: View {
                     .foregroundStyle(color)
             }
             .frame(width: 68, height: 68)
-            Text(score.band?.rawValue ?? "No data")
+            Text(score.displayLabel)
                 .font(.caption.bold())
                 .foregroundStyle(color)
         }
