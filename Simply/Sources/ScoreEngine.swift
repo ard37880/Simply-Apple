@@ -23,7 +23,6 @@ struct ScoreResult {
     let additivesKnown: Bool
     let additivePoints: Int        // 0..30
     let worstRisk: AdditiveRisk?
-    let organicPoints: Int         // 0 or 10
     let euBanned: [Additive]
     let euRestricted: [Additive]
     let cappedByBanned: Bool
@@ -189,8 +188,9 @@ enum NutriScore {
 }
 
 /// Composite score — identical rules to the Android app:
-/// food = 60 nutrition + 30 additives + 10 organic, renormalized over
-/// known axes; other verticals score purely on ingredient safety.
+/// food = 60 nutrition + 30 additives, renormalized over known axes;
+/// other verticals score purely on ingredient safety. Organic
+/// certification is displayed but earns no points.
 /// High-risk caps at 49; anything EU-banned caps at 24.
 enum ScoreEngine {
 
@@ -215,7 +215,8 @@ enum ScoreEngine {
         let grade: Character? = nil
 
         let additivesKnown = product.hasAdditiveData
-        let worstRisk = product.additives.map(\.effectiveRisk).max()
+        let worstRisk = (product.additives.map(\.effectiveRisk) +
+            product.flaggedIngredients.map(\.risk)).max()
         var additivePoints: Int
         switch worstRisk {
         case nil, .some(.none): additivePoints = 30
@@ -228,12 +229,11 @@ enum ScoreEngine {
             additivePoints = min(additivePoints, 22)
         }
 
-        let organicPoints = product.isOrganic ? 10 : 0
         let banned = product.additives.filter { $0.euStatus == .banned }
         let restricted = product.additives.filter { $0.euStatus == .restricted }
 
-        var earned = organicPoints
-        var availableMax = 10
+        var earned = 0
+        var availableMax = 0
         if nutritionKnown { earned += nutritionPoints; availableMax += 60 }
         if additivesKnown { earned += additivePoints; availableMax += 30 }
 
@@ -261,7 +261,7 @@ enum ScoreEngine {
                NutriScore.simplyPoints($0, novaGroup: product.novaGroup,
                                        sweetener: sweetener, weights: weights)
            }) {
-            var pEarned = organicPoints + pNutrition
+            var pEarned = pNutrition
             if additivesKnown { pEarned += additivePoints }
             var pTotal = Int((Double(pEarned) * 100.0 / Double(availableMax)).rounded())
             pTotal = min(max(pTotal, standard - personalizationSwing), standard + personalizationSwing)
@@ -280,7 +280,6 @@ enum ScoreEngine {
             additivesKnown: additivesKnown,
             additivePoints: additivePoints,
             worstRisk: worstRisk,
-            organicPoints: organicPoints,
             euBanned: banned,
             euRestricted: restricted,
             cappedByBanned: cappedByBanned,
@@ -327,7 +326,6 @@ enum ScoreEngine {
             additivesKnown: known,
             additivePoints: 0,
             worstRisk: worstRisk,
-            organicPoints: 0,
             euBanned: banned,
             euRestricted: restricted,
             cappedByBanned: cappedByBanned,

@@ -406,14 +406,20 @@ final class ProductRepository {
         return (200..<300).contains(http.statusCode)
     }
 
+    /// [nutriments] uses OFF per-100g keys ("energy-kcal_100g", …) with
+    /// values already converted from per serving.
     func submitFacts(
         barcode: String, ingredientsText: String? = nil, stores: String? = nil,
-        storesRegion: String? = nil
+        storesRegion: String? = nil, nutriments: [String: Double]? = nil,
+        servingSize: String? = nil, servingQuantity: Double? = nil
     ) async -> Bool {
-        var payload: [String: String] = [:]
+        var payload: [String: Any] = [:]
         if let ingredientsText { payload["ingredients_text"] = ingredientsText }
         if let stores { payload["stores"] = stores }
         if let storesRegion { payload["stores_region"] = storesRegion }
+        if let nutriments, !nutriments.isEmpty { payload["nutriments"] = nutriments }
+        if let servingSize { payload["serving_size"] = servingSize }
+        if let servingQuantity { payload["serving_quantity"] = servingQuantity }
         var request = URLRequest(
             url: Self.serverBase.appendingPathComponent("api/v2/product/\(barcode)/facts"))
         request.httpMethod = "POST"

@@ -248,22 +248,37 @@ enum StoreNames {
         "dollar general": "Dollar General",
         "dollar tree": "Dollar Tree",
         "food lion": "Food Lion",
+        "fred meyer": "Fred Meyer",
         "giant": "Giant",
+        "giant eagle": "Giant Eagle",
         "h e b": "H-E-B",
         "h-e-b": "H-E-B",
+        "harris teeter": "Harris Teeter",
         "heb": "H-E-B",
+        "hy vee": "Hy-Vee",
+        "hy-vee": "Hy-Vee",
+        "hyvee": "Hy-Vee",
+        "jewel osco": "Jewel-Osco",
+        "jewel-osco": "Jewel-Osco",
+        "king soopers": "King Soopers",
         "kroger": "Kroger",
         "lidl": "Lidl",
         "meijer": "Meijer",
         "publix": "Publix",
+        "ralphs": "Ralphs",
         "safeway": "Safeway",
         "sam s club": "Sam's Club",
         "sam's club": "Sam's Club",
         "sams club": "Sam's Club",
         "7 eleven": "7-Eleven",
         "7-eleven": "7-Eleven",
+        "shop rite": "ShopRite",
+        "shoprite": "ShopRite",
         "sprouts": "Sprouts",
         "sprouts farmers market": "Sprouts",
+        "stater bros": "Stater Bros",
+        "stater bros.": "Stater Bros",
+        "stater brothers": "Stater Bros",
         "stop & shop": "Stop & Shop",
         "stop and shop": "Stop & Shop",
         "target": "Target",
@@ -280,6 +295,89 @@ enum StoreNames {
         "winco": "WinCo Foods",
         "winco foods": "WinCo Foods",
     ]
+
+    /// All 50 states plus DC — chains with a national footprint.
+    private static let national: Set<String> = [
+        "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "DC", "FL", "GA",
+        "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA",
+        "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY",
+        "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX",
+        "UT", "VT", "VA", "WA", "WV", "WI", "WY",
+    ]
+
+    /// Which US states each chain operates in, keyed by canonical display
+    /// name. Chains absent from this map have unknown coverage and are
+    /// never filtered out.
+    private static let coverage: [String: Set<String>] = [
+        "Walmart": national,
+        "Target": national,
+        "Costco": national,
+        "Sam's Club": national,
+        "Whole Foods": national,
+        "Trader Joe's": national,
+        "7-Eleven": national,
+        "Aldi": [
+            "AL", "AR", "AZ", "CA", "CO", "CT", "DE", "DC", "FL", "GA",
+            "IA", "IL", "IN", "KS", "KY", "LA", "MA", "MD", "MI", "MN",
+            "MO", "MS", "NC", "ND", "NE", "NH", "NJ", "NY", "OH", "OK",
+            "PA", "RI", "SC", "SD", "TN", "TX", "VA", "VT", "WI", "WV",
+        ],
+        "Vons": ["CA", "NV"],
+        "Ralphs": ["CA"],
+        "Stater Bros": ["CA"],
+        "H-E-B": ["TX"],
+        "Publix": ["FL", "GA", "AL", "SC", "NC", "TN", "VA", "KY"],
+        "Wegmans": ["NY", "PA", "NJ", "VA", "MD", "MA", "NC", "DE", "DC"],
+        "Meijer": ["MI", "OH", "IN", "IL", "KY", "WI"],
+        "Hy-Vee": ["IA", "IL", "KS", "MN", "MO", "NE", "SD", "WI"],
+        "WinCo Foods": ["WA", "OR", "ID", "NV", "CA", "AZ", "UT", "TX", "OK", "MT"],
+        "Safeway": [
+            "AK", "AZ", "CA", "CO", "DC", "DE", "HI", "ID", "MD", "MT",
+            "NE", "NM", "NV", "OR", "SD", "VA", "WA", "WY",
+        ],
+        "Albertsons": [
+            "AZ", "CA", "CO", "ID", "LA", "MT", "ND", "NV", "NM", "OR",
+            "TX", "UT", "WA", "WY",
+        ],
+        "Kroger": [
+            "AK", "AL", "AR", "AZ", "CA", "CO", "DC", "GA", "ID", "IL",
+            "IN", "KS", "KY", "LA", "MD", "MI", "MO", "MS", "MT", "NC",
+            "NE", "NM", "NV", "OH", "OR", "SC", "TN", "TX", "UT", "VA",
+            "WA", "WV", "WI", "WY",
+        ],
+        "Fred Meyer": ["WA", "OR", "ID", "AK"],
+        "King Soopers": ["CO", "WY"],
+        "ShopRite": ["NJ", "NY", "PA", "CT", "DE", "MD"],
+        "Stop & Shop": ["MA", "CT", "RI", "NY", "NJ"],
+        "Food Lion": ["DE", "GA", "KY", "MD", "NC", "PA", "SC", "TN", "VA", "WV"],
+        "Harris Teeter": ["NC", "SC", "VA", "MD", "DE", "DC", "GA", "FL"],
+        "Giant Eagle": ["PA", "OH", "WV", "IN", "MD"],
+        "Sprouts": [
+            "AL", "AZ", "CA", "CO", "DE", "FL", "GA", "KS", "LA", "MD",
+            "MO", "NC", "NJ", "NM", "NV", "OK", "PA", "SC", "TN", "TX",
+            "UT", "VA", "WA",
+        ],
+        "Jewel-Osco": ["IL", "IN", "IA"],
+    ]
+
+    /// Orders chains available in the user's state first and drops chains
+    /// whose known footprint excludes that state; chains with unknown
+    /// coverage are kept after the in-state ones. Returns the full list
+    /// unchanged when no state is known or filtering would empty it.
+    static func forState(_ stores: [String], _ stateCode: String?) -> [String] {
+        guard let stateCode, !stores.isEmpty else { return stores }
+        var inState: [String] = []
+        var unknown: [String] = []
+        for store in stores {
+            guard let states = coverage[store] else {
+                unknown.append(store)
+                continue
+            }
+            if states.contains(stateCode) { inState.append(store) }
+        }
+        let filtered = inState + unknown
+        return filtered.isEmpty ? stores : filtered
+    }
 
     static func normalize(stores: String?, storesTags: [String] = []) -> [String] {
         let raw: [String]

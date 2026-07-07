@@ -98,6 +98,59 @@ final class LocationTagger: NSObject, CLLocationManagerDelegate {
         return region.isEmpty ? nil : region
     }
 
+    /// Resolves the device position to a two-letter US state code and
+    /// caches it; returns nil (leaving any cached value in place) without
+    /// permission, a fix, or a geocoder result.
+    func stateCode() async -> String? {
+        let status = manager.authorizationStatus
+        guard status == .authorizedWhenInUse || status == .authorizedAlways else { return nil }
+        manager.requestLocation()
+        guard let location = manager.location else { return nil }
+        guard let placemark = try? await CLGeocoder()
+            .reverseGeocodeLocation(location).first else { return nil }
+        guard let code = Self.toStateCode(placemark.administrativeArea) else { return nil }
+        UserDefaults.standard.set(code, forKey: Self.stateCodeKey)
+        return code
+    }
+
+    /// The last state code resolved by `stateCode()`, so render paths
+    /// never wait on location.
+    var cachedStateCode: String? {
+        UserDefaults.standard.string(forKey: Self.stateCodeKey)
+    }
+
+    private static let stateCodeKey = "location.stateCode"
+
+    /// Geocoders return either a two-letter code or a full state name.
+    private static func toStateCode(_ adminArea: String?) -> String? {
+        guard let raw = adminArea?.trimmingCharacters(in: .whitespaces), !raw.isEmpty
+        else { return nil }
+        let upper = raw.uppercased()
+        if upper.count == 2, stateCodes.values.contains(upper) { return upper }
+        return stateCodes[raw.lowercased()]
+    }
+
+    private static let stateCodes: [String: String] = [
+        "alabama": "AL", "alaska": "AK", "arizona": "AZ",
+        "arkansas": "AR", "california": "CA", "colorado": "CO",
+        "connecticut": "CT", "delaware": "DE",
+        "district of columbia": "DC", "florida": "FL",
+        "georgia": "GA", "hawaii": "HI", "idaho": "ID",
+        "illinois": "IL", "indiana": "IN", "iowa": "IA",
+        "kansas": "KS", "kentucky": "KY", "louisiana": "LA",
+        "maine": "ME", "maryland": "MD", "massachusetts": "MA",
+        "michigan": "MI", "minnesota": "MN", "mississippi": "MS",
+        "missouri": "MO", "montana": "MT", "nebraska": "NE",
+        "nevada": "NV", "new hampshire": "NH", "new jersey": "NJ",
+        "new mexico": "NM", "new york": "NY", "north carolina": "NC",
+        "north dakota": "ND", "ohio": "OH", "oklahoma": "OK",
+        "oregon": "OR", "pennsylvania": "PA", "rhode island": "RI",
+        "south carolina": "SC", "south dakota": "SD",
+        "tennessee": "TN", "texas": "TX", "utah": "UT",
+        "vermont": "VT", "virginia": "VA", "washington": "WA",
+        "west virginia": "WV", "wisconsin": "WI", "wyoming": "WY",
+    ]
+
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {}
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {}
 }

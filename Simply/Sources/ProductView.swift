@@ -44,6 +44,7 @@ struct ProductView: View {
     @State private var perServing = true
     @State private var alternatives: [ProductRepository.Alternative] = []
     @State private var showSubmit = false
+    @State private var userState: String?
 
     enum LoadState {
         case loading
@@ -80,8 +81,28 @@ struct ProductView: View {
         }
         .navigationTitle("Product")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showSubmit) { SubmitView(barcode: barcode) }
-        .task { await load() }
+        .sheet(isPresented: $showSubmit) { SubmitView(barcode: barcode, kind: currentKind) }
+        .task {
+            // With the location toggle on, order the "Available at" chains
+            // by the user's cached state and drop chains that don't operate
+            // there; the cache refreshes in the background so rendering
+            // never waits on GPS.
+            if profile.locationTagging {
+                userState = LocationTagger.shared.cachedStateCode
+            }
+            await load()
+            if profile.locationTagging,
+               let fresh = await LocationTagger.shared.stateCode() {
+                userState = fresh
+            }
+        }
+    }
+
+    /// Kind is unknown for a product not in any database yet; treat it as
+    /// food so all sections are offered.
+    private var currentKind: ProductKind {
+        if case .loaded(let product, _) = state { return product.kind }
+        return .food
     }
 
     private func load() async {
@@ -217,7 +238,8 @@ struct ProductView: View {
                     Text(quantity).font(.caption).foregroundStyle(.secondary)
                 }
                 if !product.stores.isEmpty {
-                    Text("Available at: \(product.stores.joined(separator: ", "))")
+                    let stores = StoreNames.forState(product.stores, userState)
+                    Text("Available at: \(stores.joined(separator: ", "))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -281,7 +303,6 @@ struct ProductView: View {
                              score.nutritionKnown ? "\(score.nutritionPoints) / 60" : "no data")
                 breakdownRow("Additives",
                              score.additivesKnown ? "\(score.additivePoints) / 30" : "no data")
-                breakdownRow("Organic", "\(score.organicPoints) / 10")
             }
             if score.cappedByBanned {
                 Text("Score capped because an EU-banned ingredient is present.")
