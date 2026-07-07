@@ -40,6 +40,7 @@ struct ProductView: View {
     let onProduct: (String) -> Void
 
     @EnvironmentObject var profile: ProfileStore
+    @Environment(\.dismiss) private var dismiss
     @State private var state: LoadState = .loading
     @State private var perServing = true
     @State private var alternatives: [ProductRepository.Alternative] = []
@@ -59,22 +60,43 @@ struct ProductView: View {
             case .loading:
                 ProgressView()
             case .notFound:
-                VStack(spacing: 12) {
-                    Text("Product not found")
+                VStack(spacing: 8) {
+                    Text("Not in any database yet")
                         .font(.headline)
-                    Text("Barcode \(barcode) isn't in the database yet — you can be the first to add it.")
+                        .multilineTextAlignment(.center)
+                    Text("Be the first to add it — a photo of the front and the ingredient label takes about 30 seconds, and it goes live for every Simply Pure user once reviewed.")
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
-                    Button("Add product photos") { showSubmit = true }
+                    // Kind is unknown for a product not in any database yet;
+                    // currentKind falls back to .food so all sections are offered.
+                    Button("Add this product") { showSubmit = true }
                         .buttonStyle(.borderedProminent)
+                        .padding(.top, 8)
+                    Button("Scan again") { dismiss() }
                 }
+                .padding(24)
+                .background(Color(.secondarySystemBackground),
+                            in: RoundedRectangle(cornerRadius: 12))
                 .padding()
             case .error(let message):
-                VStack(spacing: 12) {
+                VStack(spacing: 8) {
+                    Text("Couldn't reach the database")
+                        .font(.headline)
+                        .multilineTextAlignment(.center)
+                    Text("Check your connection and try again — this doesn't mean the product isn't listed.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
                     Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
                     Button("Retry") { Task { await load() } }
                         .buttonStyle(.borderedProminent)
+                        .padding(.top, 8)
                 }
+                .padding()
             case .loaded(let product, let score):
                 detail(product, score)
             }
@@ -299,7 +321,7 @@ struct ProductView: View {
                 breakdownRow("EU-banned ingredients", "\(score.euBanned.count)")
                 breakdownRow("EU-restricted ingredients", "\(score.euRestricted.count)")
             } else {
-                breakdownRow("Nutrition (Simply model)",
+                breakdownRow("Nutrition (Simply Pure model)",
                              score.nutritionKnown ? "\(score.nutritionPoints) / 60" : "no data")
                 breakdownRow("Additives",
                              score.additivesKnown ? "\(score.additivePoints) / 30" : "no data")
@@ -407,14 +429,14 @@ struct ProductView: View {
         case .household:
             return "Ratings reflect EU CLP/REACH classifications and the Detergent Regulation. Product data from the Open Products Facts community (ODbL)."
         case .food:
-            return "Scores reflect EU/EFSA safety assessments and the Simply nutrition model. Product data from the Open Food Facts community (ODbL)."
+            return "Scores reflect EU/EFSA safety assessments and the Simply Pure nutrition model. Product data from the Open Food Facts community (ODbL)."
         }
     }
 
     private var disclaimerText: String {
         "Scores summarize cited regulatory assessments of ingredients and " +
         "nutrition data — they aren't medical advice. Full methodology at " +
-        "simply.studio86.dev/methodology.html"
+        "simplypure.studio86.dev/methodology.html"
     }
 }
 
@@ -504,7 +526,7 @@ struct ScoreRing: View {
 // MARK: - "Why the European standard?" explainer
 
 let euStandardExplainer =
-    "Simply rates additives against the European Union's food-safety " +
+    "Simply Pure rates additives against the European Union's food-safety " +
     "system, the strictest widely adopted in the world. The EU reviews " +
     "additives before they reach shelves and withdraws approval when new " +
     "evidence raises doubt — a precautionary approach. In the US, an " +
@@ -513,7 +535,7 @@ let euStandardExplainer =
     "legal in the US. Potassium bromate is not permitted in the EU, " +
     "Canada, or Japan, yet still appears in some US breads.\n\n" +
     "An EU flag doesn't mean a product is acutely dangerous — dose " +
-    "matters. That's why Simply also estimates, where reliable intake " +
+    "matters. That's why Simply Pure also estimates, where reliable intake " +
     "limits exist, how much of an additive one serving contains. " +
     "Sources: EFSA, SCCS, Health Canada, Japan's MHLW."
 

@@ -15,17 +15,17 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.studio86.simply
-        MARKETING_VERSION: "1.6"
-        CURRENT_PROJECT_VERSION: 9
+        MARKETING_VERSION: "1.7"
+        CURRENT_PROJECT_VERSION: 10
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_NSCameraUsageDescription: "Simply uses the camera to scan product barcodes and label photos."
-        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Simply adds a coarse city-level tag to store reports you submit, so store availability can roll out by region."
+        INFOPLIST_KEY_NSCameraUsageDescription: "Simply Pure uses the camera to scan product barcodes and label photos."
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Simply Pure adds a coarse city-level tag to store reports you submit, so store availability can roll out by region."
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "5.9"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        INFOPLIST_KEY_CFBundleDisplayName: Simply
+        INFOPLIST_KEY_CFBundleDisplayName: Simply Pure
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         DEVELOPMENT_TEAM: 5W98RM8F6A
         CODE_SIGN_STYLE: Automatic

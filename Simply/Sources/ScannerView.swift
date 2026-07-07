@@ -5,6 +5,7 @@ import VisionKit
 /// Falls back to manual entry on the simulator or unsupported devices.
 struct ScannerView: View {
     let onBarcode: (String) -> Void
+    let onSearch: () -> Void
     @State private var manualEntry = false
     @State private var manualCode = ""
     @State private var scannerAvailable =
@@ -42,6 +43,13 @@ struct ScannerView: View {
             }
         }
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    onSearch()
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     manualEntry = true

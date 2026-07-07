@@ -55,6 +55,7 @@ struct RootView: View {
 
     enum Route: Hashable {
         case product(String)
+        case search
         case history
         case profile
     }
@@ -64,10 +65,11 @@ struct RootView: View {
             OnboardingView()
         } else {
             NavigationStack(path: $path) {
-                ScannerView { code in
-                    path.append(Route.product(code))
-                }
-                .navigationTitle("Simply")
+                ScannerView(
+                    onBarcode: { code in path.append(Route.product(code)) },
+                    onSearch: { path.append(Route.search) }
+                )
+                .navigationTitle("Simply Pure")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
@@ -91,6 +93,10 @@ struct RootView: View {
                     switch route {
                     case .product(let barcode):
                         ProductView(barcode: barcode) { code in
+                            path.append(Route.product(code))
+                        }
+                    case .search:
+                        SearchView { code in
                             path.append(Route.product(code))
                         }
                     case .history:

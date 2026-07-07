@@ -49,7 +49,7 @@ struct ScoreResult {
     }
 }
 
-/// Per-component multipliers for the Simply nutrition model, driven by the
+/// Per-component multipliers for the Simply Pure nutrition model, driven by the
 /// user's diet preferences. 1.0 everywhere = the standard score. Weights
 /// scale deductions and bonuses alike: a 2.0 sugar weight doubles the
 /// sugar deduction; a 1.5 protein weight raises the protein bonus.
@@ -105,7 +105,7 @@ struct NutritionWeights: Equatable {
 /// Nutri-Score (2017 algorithm) fallback when the database has no grade.
 enum NutriScore {
 
-    /// The Simply nutrition model (0..60): nutrient thresholds plus an
+    /// The Simply Pure nutrition model (0..60): nutrient thresholds plus an
     /// artificial-sweetener penalty. Ultra-processing is scored separately
     /// as the NOVA axis in ScoreEngine.
     static func simplyPoints(

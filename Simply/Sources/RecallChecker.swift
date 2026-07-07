@@ -5,7 +5,7 @@ import UserNotifications
 // MARK: - FDA recall alerts
 
 /// Matches the scan history against recent FDA food-enforcement records via
-/// the Simply server (which holds the openFDA key and the matching logic)
+/// the Simply Pure server (which holds the openFDA key and the matching logic)
 /// and raises one local notification per newly seen recall.
 enum RecallChecker {
 

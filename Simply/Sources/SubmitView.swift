@@ -45,6 +45,90 @@ func extractIngredients(from raw: String) -> String {
         .trimmingCharacters(in: CharacterSet(charactersIn: " ,.;-"))
 }
 
+// Unit a nutrition value is entered in, exactly as printed on the label.
+// OFF nutriment values are grams per 100 g (energy stays kcal), so each
+// unit carries its grams divisor for the save-time conversion.
+enum NutrientUnit: String {
+    case kcal, g, mg, mcg
+
+    var perGram: Double {
+        switch self {
+        case .kcal, .g: return 1
+        case .mg: return 1_000
+        case .mcg: return 1_000_000
+        }
+    }
+}
+
+// Per-serving nutrition entry (food products only), covering the full US
+// nutrition-facts label. Core fields always show in the section; extended
+// ones appear when the label scan finds them or the user adds them via
+// the "Add a nutrient" picker. offKey is the OFF per-100g nutriment key
+// (nil = the serving-size field). Same table as the Android app.
+struct NutrientField {
+    let key: String
+    let label: String
+    let unit: NutrientUnit
+    let offKey: String?
+    var core = false
+}
+
+let nutrientFields: [NutrientField] = [
+    NutrientField(key: "serving", label: "Serving size", unit: .g, offKey: nil, core: true),
+    NutrientField(key: "calories", label: "Calories", unit: .kcal, offKey: "energy-kcal_100g", core: true),
+    NutrientField(key: "totalfat", label: "Total fat", unit: .g, offKey: "fat_100g", core: true),
+    NutrientField(key: "satfat", label: "Saturated fat", unit: .g, offKey: "saturated-fat_100g", core: true),
+    NutrientField(key: "transfat", label: "Trans fat", unit: .g, offKey: "trans-fat_100g", core: true),
+    NutrientField(key: "cholesterol", label: "Cholesterol", unit: .mg, offKey: "cholesterol_100g", core: true),
+    NutrientField(key: "sodium", label: "Sodium", unit: .mg, offKey: "sodium_100g", core: true),
+    NutrientField(key: "carbs", label: "Total carbohydrate", unit: .g, offKey: "carbohydrates_100g", core: true),
+    NutrientField(key: "fiber", label: "Dietary fiber", unit: .g, offKey: "fiber_100g", core: true),
+    NutrientField(key: "sugars", label: "Total sugars", unit: .g, offKey: "sugars_100g", core: true),
+    NutrientField(key: "addedsugars", label: "Added sugars", unit: .g, offKey: "added-sugars_100g", core: true),
+    NutrientField(key: "protein", label: "Protein", unit: .g, offKey: "proteins_100g", core: true),
+    NutrientField(key: "polyfat", label: "Polyunsaturated fat", unit: .g, offKey: "polyunsaturated-fat_100g"),
+    NutrientField(key: "monofat", label: "Monounsaturated fat", unit: .g, offKey: "monounsaturated-fat_100g"),
+    NutrientField(key: "polyols", label: "Sugar alcohols", unit: .g, offKey: "polyols_100g"),
+    NutrientField(key: "vitd", label: "Vitamin D", unit: .mcg, offKey: "vitamin-d_100g"),
+    NutrientField(key: "calcium", label: "Calcium", unit: .mg, offKey: "calcium_100g"),
+    NutrientField(key: "iron", label: "Iron", unit: .mg, offKey: "iron_100g"),
+    NutrientField(key: "potassium", label: "Potassium", unit: .mg, offKey: "potassium_100g"),
+    NutrientField(key: "vita", label: "Vitamin A", unit: .mcg, offKey: "vitamin-a_100g"),
+    NutrientField(key: "vitc", label: "Vitamin C", unit: .mg, offKey: "vitamin-c_100g"),
+    NutrientField(key: "vite", label: "Vitamin E", unit: .mg, offKey: "vitamin-e_100g"),
+    NutrientField(key: "vitk", label: "Vitamin K", unit: .mcg, offKey: "vitamin-k_100g"),
+    NutrientField(key: "thiamin", label: "Thiamin", unit: .mg, offKey: "vitamin-b1_100g"),
+    NutrientField(key: "riboflavin", label: "Riboflavin", unit: .mg, offKey: "vitamin-b2_100g"),
+    NutrientField(key: "niacin", label: "Niacin", unit: .mg, offKey: "vitamin-pp_100g"),
+    NutrientField(key: "vitb6", label: "Vitamin B6", unit: .mg, offKey: "vitamin-b6_100g"),
+    NutrientField(key: "folate", label: "Folate", unit: .mcg, offKey: "vitamin-b9_100g"),
+    NutrientField(key: "vitb12", label: "Vitamin B12", unit: .mcg, offKey: "vitamin-b12_100g"),
+    NutrientField(key: "biotin", label: "Biotin", unit: .mcg, offKey: "biotin_100g"),
+    NutrientField(key: "pantothenic", label: "Pantothenic acid", unit: .mg, offKey: "pantothenic-acid_100g"),
+    NutrientField(key: "phosphorus", label: "Phosphorus", unit: .mg, offKey: "phosphorus_100g"),
+    NutrientField(key: "iodine", label: "Iodine", unit: .mcg, offKey: "iodine_100g"),
+    NutrientField(key: "magnesium", label: "Magnesium", unit: .mg, offKey: "magnesium_100g"),
+    NutrientField(key: "zinc", label: "Zinc", unit: .mg, offKey: "zinc_100g"),
+    NutrientField(key: "selenium", label: "Selenium", unit: .mcg, offKey: "selenium_100g"),
+    NutrientField(key: "copper", label: "Copper", unit: .mg, offKey: "copper_100g"),
+    NutrientField(key: "manganese", label: "Manganese", unit: .mg, offKey: "manganese_100g"),
+    NutrientField(key: "chromium", label: "Chromium", unit: .mcg, offKey: "chromium_100g"),
+    NutrientField(key: "molybdenum", label: "Molybdenum", unit: .mcg, offKey: "molybdenum_100g"),
+    NutrientField(key: "chloride", label: "Chloride", unit: .mg, offKey: "chloride_100g"),
+    NutrientField(key: "choline", label: "Choline", unit: .mg, offKey: "choline_100g"),
+    NutrientField(key: "caffeine", label: "Caffeine", unit: .mg, offKey: "caffeine_100g"),
+]
+
+// A label line that has no OFF nutriment key (e.g. taurine). These are
+// serialized into the human-readable nutrition_other facts field instead
+// of the nutriments map, since OFF wouldn't understand arbitrary keys.
+struct OtherNutrient: Identifiable {
+    let id = UUID()
+    var name = ""
+    var amount = ""
+    var unit = "mg"
+}
+
 /// Best-effort read of a US nutrition-facts label from raw OCR text.
 /// Returns per-serving values keyed by the nutrition field keys — prefill
 /// only, the user confirms or corrects every value. Same patterns as the
@@ -63,15 +147,63 @@ func parseNutritionFacts(from raw: String) -> [String: String] {
         else { return }
         out[key] = String(text[range])
     }
+    // One nutrient line: the value in the label's printed unit comes right
+    // after the name, so the %DV that follows is never captured
+    // ("Sodium 190mg 8%" -> 190). mcg accepts the µg spellings OCR reads.
+    func nutrient(_ key: String, _ name: String, _ unit: String) {
+        let u = unit == "mcg" ? "(?:mcg|µg|ug)" : unit
+        grab(key, #"\b"# + name + #"\D{0,10}(\d+(?:\.\d+)?)\s*"# + u)
+    }
     // "Serving size 2/3 cup (55g)" — grams in parentheses first, then bare
     grab("serving", #"serving size[^(]{0,40}\((\d+(?:\.\d+)?)\s*g\)"#)
     grab("serving", #"serving size\D{0,20}(\d+(?:\.\d+)?)\s*g"#)
-    grab("calories", #"calories\D{0,10}(\d+(?:\.\d+)?)"#)
-    grab("sugars", #"(?:total )?sugars\D{0,10}(\d+(?:\.\d+)?)\s*g"#)
-    grab("satfat", #"saturated fat\D{0,10}(\d+(?:\.\d+)?)\s*g"#)
-    grab("sodium", #"sodium\D{0,10}(\d+(?:\.\d+)?)\s*mg"#)
-    grab("fiber", #"(?:dietary )?fiber\D{0,10}(\d+(?:\.\d+)?)\s*g"#)
-    grab("protein", #"protein\D{0,10}(\d+(?:\.\d+)?)\s*g"#)
+    grab("calories", #"\bcalories\D{0,10}(\d+(?:\.\d+)?)"#)
+    nutrient("totalfat", "total fat", "g")
+    nutrient("satfat", "saturated fat", "g")
+    nutrient("transfat", "trans fat", "g")
+    nutrient("polyfat", "polyunsaturated fat", "g")
+    nutrient("monofat", "monounsaturated fat", "g")
+    nutrient("cholesterol", "cholesterol", "mg")
+    nutrient("sodium", "sodium", "mg")
+    // "Total Carbohydrate" / "Total Carb." — \D swallows either spelling
+    grab("carbs", #"\btotal carb\D{0,15}(\d+(?:\.\d+)?)\s*g"#)
+    nutrient("fiber", "(?:dietary )?fiber", "g")
+    // "Total Sugars 4g" but never the "Includes Xg Added Sugars" line
+    grab("sugars", #"(?<!added )(?:total )?sugars\D{0,10}(\d+(?:\.\d+)?)\s*g"#)
+    grab("addedsugars", #"\bincludes\s*(\d+(?:\.\d+)?)\s*g\s*(?:of\s+)?added sugars"#)
+    nutrient("addedsugars", "added sugars", "g")
+    nutrient("polyols", "sugar alcohols?", "g")
+    nutrient("polyols", "polyols?", "g")
+    nutrient("protein", "protein", "g")
+    nutrient("vitd", "vitamin d", "mcg")
+    nutrient("calcium", "calcium", "mg")
+    nutrient("iron", "iron", "mg")
+    nutrient("potassium", "potassium", "mg")
+    nutrient("vita", "vitamin a", "mcg")
+    nutrient("vitc", "vitamin c", "mg")
+    nutrient("vite", "vitamin e", "mg")
+    nutrient("vitk", "vitamin k", "mcg")
+    nutrient("thiamin", "thiamine?", "mg")
+    nutrient("riboflavin", "riboflavin", "mg")
+    nutrient("niacin", "niacin", "mg")
+    nutrient("vitb6", #"vitamin b\s*[6₆]"#, "mg")
+    // "Folate 165mcg DFE (100mcg folic acid)" — the DFE amount comes first
+    nutrient("folate", "folate", "mcg")
+    nutrient("vitb12", #"vitamin b\s*12"#, "mcg")
+    nutrient("biotin", "biotin", "mcg")
+    nutrient("pantothenic", "pantothenic acid", "mg")
+    nutrient("phosphorus", "phosphorus", "mg")
+    nutrient("iodine", "iodine", "mcg")
+    nutrient("magnesium", "magnesium", "mg")
+    nutrient("zinc", "zinc", "mg")
+    nutrient("selenium", "selenium", "mcg")
+    nutrient("copper", "copper", "mg")
+    nutrient("manganese", "manganese", "mg")
+    nutrient("chromium", "chromium", "mcg")
+    nutrient("molybdenum", "molybdenum", "mcg")
+    nutrient("chloride", "chloride", "mg")
+    nutrient("choline", "choline", "mg")
+    nutrient("caffeine", "caffeine", "mg")
     return out
 }
 
@@ -110,18 +242,6 @@ struct SubmitView: View {
         ("nutrition", "Nutrition facts label"),
     ]
 
-    // Per-serving nutrition entry (food products only). Field key ->
-    // (label, OFF per-100g nutriment key; nil = the serving-size field).
-    private static let nutritionFields: [(String, String, String?)] = [
-        ("serving", "Serving size (g)", nil),
-        ("calories", "Calories (kcal)", "energy-kcal_100g"),
-        ("sugars", "Total sugars (g)", "sugars_100g"),
-        ("satfat", "Saturated fat (g)", "saturated-fat_100g"),
-        ("sodium", "Sodium (mg)", "sodium_100g"),
-        ("fiber", "Fiber (g)", "fiber_100g"),
-        ("protein", "Protein (g)", "proteins_100g"),
-    ]
-
     // Nutrition facts only apply to food; other kinds skip the section
     // and the nutrition-label photo slot.
     private var slots: [(String, String)] {
@@ -134,6 +254,11 @@ struct SubmitView: View {
     @State private var ocrRan = false
     @State private var store = ""
     @State private var nutrition: [String: String] = [:]
+    @State private var nutritionOcrRan = false
+    @State private var nutritionOcrFound = false
+    // Extended fields currently shown (OCR hit or user-added via picker)
+    @State private var extraVisible: Set<String> = []
+    @State private var others: [OtherNutrient] = []
     @State private var saving = false
     @State private var resultMessage: String?
 
@@ -144,13 +269,17 @@ struct SubmitView: View {
             || nutrition.values.contains {
                 !$0.trimmingCharacters(in: .whitespaces).isEmpty
             }
+            || others.contains {
+                !$0.name.trimmingCharacters(in: .whitespaces).isEmpty
+                    || !$0.amount.trimmingCharacters(in: .whitespaces).isEmpty
+            }
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Photograph the package, check the scanned ingredient list, then tap Save. Your contribution improves this product for every Simply user.")
+                    Text("Photograph the package, check the scanned ingredient list, then tap Save. Your contribution improves this product for every Simply Pure user.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
 
@@ -177,22 +306,11 @@ struct SubmitView: View {
                                 .stroke(.quaternary))
                     }
 
-                    if kind == .food {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Nutrition facts (per serving)")
-                                .font(.subheadline.weight(.semibold))
-                            Text("Optional — enter the values as printed on the label.")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                            nutritionField(Self.nutritionFields[0].0,
-                                           Self.nutritionFields[0].1)
-                            ForEach(pairedNutritionFields, id: \.0.0) { left, right in
-                                HStack(alignment: .bottom, spacing: 12) {
-                                    nutritionField(left.0, left.1)
-                                    nutritionField(right.0, right.1)
-                                }
-                            }
-                        }
+                    // The nutrition form only appears once a nutrition-label
+                    // photo was taken and scanned — the same gate as the
+                    // ingredient editor.
+                    if kind == .food, nutritionOcrRan {
+                        nutritionSection
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
@@ -236,6 +354,14 @@ struct SubmitView: View {
                                 .trimmingCharacters(in: .whitespaces).isEmpty {
                                 nutrition[key] = value
                             }
+                            // Extended fields the label scan found join the form
+                            for catalogField in nutrientFields
+                            where !catalogField.core
+                                && !(nutrition[catalogField.key] ?? "").isEmpty {
+                                extraVisible.insert(catalogField.key)
+                            }
+                            nutritionOcrFound = !parsed.isEmpty
+                            nutritionOcrRan = true
                         }
                     }
                 }
@@ -243,23 +369,105 @@ struct SubmitView: View {
         }
     }
 
-    private var pairedNutritionFields: [((String, String, String?), (String, String, String?))] {
-        let rest = Array(Self.nutritionFields.dropFirst())
-        return stride(from: 0, to: rest.count - 1, by: 2).map { (rest[$0], rest[$0 + 1]) }
+    // Core fields plus whichever extended fields are visible, two per row
+    private var shownNutrientRows: [[NutrientField]] {
+        let shown = nutrientFields.filter {
+            $0.offKey != nil && ($0.core || extraVisible.contains($0.key))
+        }
+        return stride(from: 0, to: shown.count, by: 2).map {
+            Array(shown[$0..<min($0 + 2, shown.count)])
+        }
     }
 
-    private func nutritionField(_ key: String, _ label: String) -> some View {
+    @ViewBuilder private var nutritionSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Nutrition facts (per serving)")
+                .font(.subheadline.weight(.semibold))
+            Text(nutritionOcrFound
+                ? "Here's what the scan read from the label. Please check it against the package and fix any mistakes, then tap Save:"
+                : "Couldn't read values from the nutrition photo — you can enter them manually.")
+                .font(.subheadline)
+            nutritionField(nutrientFields.first { $0.offKey == nil }!)
+            ForEach(shownNutrientRows, id: \.first!.key) { row in
+                HStack(alignment: .bottom, spacing: 12) {
+                    ForEach(row, id: \.key) { field in
+                        nutritionField(field)
+                    }
+                }
+            }
+            // Rows for label lines that have no OFF nutriment key
+            ForEach(others) { other in
+                HStack(spacing: 8) {
+                    TextField("Nutrient", text: otherBinding(other.id, \.name))
+                        .textFieldStyle(.roundedBorder)
+                    TextField("Amount", text: otherBinding(other.id, \.amount))
+                        .keyboardType(.decimalPad)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 110)
+                    Menu(other.unit) {
+                        ForEach(["g", "mg", "mcg"], id: \.self) { unit in
+                            Button(unit) {
+                                if let i = others.firstIndex(where: { $0.id == other.id }) {
+                                    others[i].unit = unit
+                                }
+                            }
+                        }
+                    }
+                    Button {
+                        others.removeAll { $0.id == other.id }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(Color.riskHigh)
+                    }
+                }
+            }
+            HStack(spacing: 12) {
+                let addable = nutrientFields.filter {
+                    !$0.core && !extraVisible.contains($0.key)
+                }
+                if !addable.isEmpty {
+                    Menu("Add a nutrient") {
+                        ForEach(addable, id: \.key) { field in
+                            Button("\(field.label) (\(field.unit.rawValue))") {
+                                extraVisible.insert(field.key)
+                            }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                }
+                Button("Other nutrient") { others.append(OtherNutrient()) }
+                    .buttonStyle(.bordered)
+            }
+        }
+    }
+
+    private func nutritionField(_ field: NutrientField) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label)
+            Text("\(field.label) (\(field.unit.rawValue))")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             TextField("", text: Binding(
-                get: { nutrition[key] ?? "" },
-                set: { nutrition[key] = $0; resultMessage = nil }
+                get: { nutrition[field.key] ?? "" },
+                set: { nutrition[field.key] = $0; resultMessage = nil }
             ))
             .keyboardType(.decimalPad)
             .textFieldStyle(.roundedBorder)
         }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func otherBinding(
+        _ id: UUID, _ keyPath: WritableKeyPath<OtherNutrient, String>
+    ) -> Binding<String> {
+        Binding(
+            get: { others.first { $0.id == id }?[keyPath: keyPath] ?? "" },
+            set: { value in
+                if let i = others.firstIndex(where: { $0.id == id }) {
+                    others[i][keyPath: keyPath] = value
+                    resultMessage = nil
+                }
+            }
+        )
     }
 
     private func slotCard(field: String, label: String) -> some View {
@@ -290,6 +498,13 @@ struct SubmitView: View {
                 Button {
                     captured.removeValue(forKey: field)
                     if field == "ingredients" { ocrText = ""; ocrRan = false }
+                    if field == "nutrition" {
+                        nutrition = [:]
+                        extraVisible = []
+                        others = []
+                        nutritionOcrRan = false
+                        nutritionOcrFound = false
+                    }
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(Color.riskHigh)
@@ -324,23 +539,41 @@ struct SubmitView: View {
                 }
             }
             let servingG = numField("serving").flatMap { $0 > 0 ? $0 : nil }
-            let perServing: [(String, Double)] = Self.nutritionFields.compactMap { key, _, offKey in
-                guard let offKey, let value = numField(key) else { return nil }
-                // OFF stores sodium in grams; the label prints mg
-                return (offKey, key == "sodium" ? value / 1000 : value)
+            let perServing: [(String, Double)] = nutrientFields.compactMap { field in
+                // OFF stores nutrients in grams; the label prints the
+                // field's unit (mg, mcg) — kcal stays kcal.
+                guard let offKey = field.offKey, let value = numField(field.key)
+                else { return nil }
+                return (offKey, value / field.unit.perGram)
             }
             let nutritionSkipped = !perServing.isEmpty && servingG == nil
+            // 3 decimals, but never fewer than 3 significant digits so
+            // micronutrients entered in mcg survive the grams conversion.
+            func roundPer100g(_ value: Double) -> Double {
+                guard value > 0 else { return 0 }
+                var scale = 1000.0
+                while value * scale < 100 { scale *= 10 }
+                return (value * scale).rounded() / scale
+            }
             var nutriments: [String: Double]?
             if let servingG, !perServing.isEmpty {
                 nutriments = Dictionary(uniqueKeysWithValues: perServing.map {
-                    ($0.0, ($0.1 / servingG * 100 * 1000).rounded() / 1000)
+                    ($0.0, roundPer100g($0.1 / servingG * 100))
                 })
             }
+            // Nutrients with no OFF key travel as one human-readable string
+            let otherText = others.compactMap { other -> String? in
+                let name = other.name.trimmingCharacters(in: .whitespaces)
+                let amount = other.amount.trimmingCharacters(in: .whitespaces)
+                guard !name.isEmpty, !amount.isEmpty else { return nil }
+                return "\(name): \(amount) \(other.unit) per serving"
+            }.joined(separator: "; ")
             let servingSizeText = servingG.map {
                 $0 == $0.rounded(.down) ? "\(Int($0)) g" : "\($0) g"
             }
             var factsOk: Bool?
-            if !ingredients.isEmpty || !storeName.isEmpty || servingG != nil {
+            if !ingredients.isEmpty || !storeName.isEmpty || servingG != nil
+                || !otherText.isEmpty {
                 // Coarse "City, State" tag, only when a store is being
                 // reported and the user opted in.
                 let region = (!storeName.isEmpty && ProfileStore.shared.locationTagging)
@@ -352,6 +585,7 @@ struct SubmitView: View {
                     stores: storeName.isEmpty ? nil : storeName,
                     storesRegion: region,
                     nutriments: nutriments,
+                    nutritionOther: otherText.isEmpty ? nil : otherText,
                     servingSize: servingSizeText,
                     servingQuantity: servingG)
             }
@@ -369,7 +603,7 @@ struct SubmitView: View {
                 if okPhotos > 0 { parts.append("\(okPhotos) photo\(okPhotos == 1 ? "" : "s")") }
                 if factsOk == true {
                     if !ingredients.isEmpty { parts.append("the ingredient list") }
-                    if nutriments != nil { parts.append("the nutrition facts") }
+                    if nutriments != nil || !otherText.isEmpty { parts.append("the nutrition facts") }
                     else if servingG != nil { parts.append("the serving size") }
                     if !storeName.isEmpty { parts.append("the store") }
                 }

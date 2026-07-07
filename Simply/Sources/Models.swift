@@ -203,7 +203,7 @@ struct Product {
     }
 }
 
-// MARK: - API DTOs (Open Food Facts shape, served by the Simply server)
+// MARK: - API DTOs (Open Food Facts shape, served by the Simply Pure server)
 
 struct ProductResponse: Decodable {
     var status: Int?

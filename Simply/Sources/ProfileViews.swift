@@ -1,5 +1,5 @@
 import SwiftUI
-import SafariServices
+import UIKit
 import UserNotifications
 
 // MARK: - Shared preference editor
@@ -118,7 +118,7 @@ struct OnboardingView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Welcome to Simply")
+                Text("Welcome to Simply Pure")
                     .font(.largeTitle.bold())
                     .padding(.top, 40)
                 Text("Set up your profile so scans can flag what matters to you. Everything stays on this phone — no account, no cloud, nothing shared.")
@@ -147,10 +147,6 @@ struct OnboardingView: View {
 
 struct ProfileView: View {
     @EnvironmentObject var profile: ProfileStore
-    @State private var donationAmount: Double = 12
-    @State private var donationBusy = false
-    @State private var donationError: String?
-    @State private var checkoutUrl: URL?
 
     var body: some View {
         ScrollView {
@@ -167,7 +163,7 @@ struct ProfileView: View {
                 PermissionToggleRow(
                     title: "Recall alerts",
                     description: "Notifies you if a product you scanned is recalled "
-                        + "(US FDA). Your scan list is sent to the Simply server to "
+                        + "(US FDA). Your scan list is sent to the Simply Pure server to "
                         + "check — nothing else.",
                     isOn: Binding(
                         get: { profile.recallAlerts },
@@ -197,46 +193,45 @@ struct ProfileView: View {
                 donationCard
                     .padding(.top, 24)
 
-                Text("Simply v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")")
+                HStack(spacing: 16) {
+                    Button("Privacy policy") {
+                        openInBrowser("https://simplypure.studio86.dev/privacy.html")
+                    }
+                    Button("Terms of use") {
+                        openInBrowser("https://simplypure.studio86.dev/terms.html")
+                    }
+                }
+                .font(.caption)
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.riskNone)
+                .padding(.top, 16)
+
+                Text("Simply Pure v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .padding(.top, 16)
+                    .padding(.top, 8)
             }
             .padding()
         }
         .navigationTitle(profile.name.isEmpty ? "Your profile" : profile.name)
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(item: $checkoutUrl) { url in
-            SafariView(url: url)
-        }
     }
 
     private var donationCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Support Simply", systemImage: "heart.fill")
+            Label("Support Simply Pure", systemImage: "heart.fill")
                 .font(.headline)
                 .foregroundStyle(Color.riskNone)
-            Text("Simply is independent — no ads, no data selling, no sponsored scores. If it saves you from a bad label, consider chipping in. Every feature stays free either way.")
+            Text("Simply Pure is independent — no ads, no data selling, no sponsored scores. If it saves you from a bad label, consider chipping in. Every feature stays free either way.")
                 .font(.subheadline)
-            Text("$\(Int(donationAmount)) / year")
-                .font(.title2.bold())
-            Slider(value: $donationAmount, in: 12...108, step: 12)
             Button {
-                startCheckout()
+                openInBrowser("https://simplypure.studio86.dev/donate")
             } label: {
-                if donationBusy {
-                    ProgressView().frame(maxWidth: .infinity)
-                } else {
-                    Text("Become a supporter — $\(Int(donationAmount))/year")
-                        .frame(maxWidth: .infinity)
-                }
+                Text("Support Simply Pure on our website")
+                    .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(donationBusy)
-            if let error = donationError {
-                Text(error).font(.caption).foregroundStyle(.red)
-            }
-            Text("Secure checkout by Stripe; cancel anytime.")
+            Text("Donations happen on our website, with secure checkout by Stripe; cancel anytime.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -244,44 +239,12 @@ struct ProfileView: View {
         .background(Color.simplyYellow.opacity(0.35), in: RoundedRectangle(cornerRadius: 14))
     }
 
-    private func startCheckout() {
-        donationBusy = true
-        donationError = nil
-        Task {
-            defer { donationBusy = false }
-            var request = URLRequest(
-                url: ProductRepository.serverBase
-                    .appendingPathComponent("api/v2/donate/checkout"))
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try? JSONSerialization.data(
-                withJSONObject: ["amount": Int(donationAmount)])
-            guard let (data, _) = try? await URLSession.shared.data(for: request),
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let urlString = json["url"] as? String,
-                  let url = URL(string: urlString)
-            else {
-                donationError = "Couldn't start checkout — try again in a moment."
-                return
-            }
-            checkoutUrl = url
-        }
+    /// Store rules: purchases can't happen in-app, so donations (and the
+    /// legal pages) open on the website in the external browser.
+    private func openInBrowser(_ url: String) {
+        guard let url = URL(string: url) else { return }
+        UIApplication.shared.open(url)
     }
-}
-
-extension URL: Identifiable {
-    public var id: String { absoluteString }
-}
-
-/// In-app Stripe Checkout — card data stays with Stripe.
-struct SafariView: UIViewControllerRepresentable {
-    let url: URL
-
-    func makeUIViewController(context: Context) -> SFSafariViewController {
-        SFSafariViewController(url: url)
-    }
-
-    func updateUIViewController(_ controller: SFSafariViewController, context: Context) {}
 }
 
 struct PermissionToggleRow: View {

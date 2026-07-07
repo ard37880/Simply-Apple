@@ -273,7 +273,7 @@ final class ProductCache {
 final class ProductRepository {
     static let shared = ProductRepository()
 
-    static let serverBase = URL(string: "https://simply.studio86.dev/")!
+    static let serverBase = URL(string: "https://simplypure.studio86.dev/")!
     static let offBase = URL(string: "https://world.openfoodfacts.org/")!
 
     enum Lookup {
@@ -380,6 +380,61 @@ final class ProductRepository {
         return Array(results.sorted { $0.score > $1.score }.prefix(6))
     }
 
+    // MARK: Search (Open Food Facts text search, scored like scans)
+
+    struct SearchResult: Identifiable {
+        var id: String { barcode }
+        let barcode: String
+        let name: String
+        let brand: String?
+        let imageUrl: URL?
+        let score: Int?       // nil = not enough data
+        let band: ScoreBand?
+    }
+
+    /// Open Food Facts text search (US products), each hit scored the same
+    /// way as a scan. Returns nil on a network/parse failure so the UI can
+    /// distinguish an error from "no matches".
+    func searchProducts(query: String) async -> [SearchResult]? {
+        var components = URLComponents(
+            url: Self.offBase.appendingPathComponent("cgi/search.pl"),
+            resolvingAgainstBaseURL: false)!
+        components.queryItems = [
+            .init(name: "search_terms", value: query),
+            .init(name: "search_simple", value: "1"),
+            .init(name: "action", value: "process"),
+            .init(name: "json", value: "1"),
+            .init(name: "page_size", value: "24"),
+            // search.pl's spelling of countries_tags=en:united-states
+            .init(name: "tagtype_0", value: "countries"),
+            .init(name: "tag_contains_0", value: "contains"),
+            .init(name: "tag_0", value: "united-states"),
+            .init(name: "fields", value: "code,product_name,brands,quantity,image_front_url,nutriscore_grade,nova_group,additives_tags,labels_tags,categories_tags,ingredients_text,nutriments,serving_size,serving_quantity,allergens_tags,traces_tags,ingredients_analysis_tags,stores,stores_tags"),
+        ]
+        var request = URLRequest(url: components.url!)
+        request.setValue("Simply-iOS/1.0 (Studio86)", forHTTPHeaderField: "User-Agent")
+        guard let (data, _) = try? await URLSession.shared.data(for: request),
+              let response = try? JSONDecoder().decode(SearchResponse.self, from: data)
+        else { return nil }
+
+        let diets = ProfileStore.shared.diets
+        var results: [SearchResult] = []
+        // OFF search pages can repeat a code; the results list is keyed by
+        // barcode, so keep only the first occurrence.
+        var seenCodes = Set<String>()
+        for dto in response.products ?? [] {
+            guard let code = dto.code, !code.isEmpty,
+                  seenCodes.insert(code).inserted else { continue }
+            let product = Self.toDomain(dto, barcode: code, sourceDb: nil)
+            let score = ScoreEngine.score(product, diets: diets)
+            results.append(SearchResult(
+                barcode: code, name: product.name, brand: product.brand,
+                imageUrl: product.imageUrl,
+                score: score.displayTotal, band: score.displayBand))
+        }
+        return Array(results.prefix(24))
+    }
+
     // MARK: Submissions (photos + verified ingredient text)
 
     func submitPhoto(barcode: String, field: String, image: UIImage) async -> Bool {
@@ -411,6 +466,7 @@ final class ProductRepository {
     func submitFacts(
         barcode: String, ingredientsText: String? = nil, stores: String? = nil,
         storesRegion: String? = nil, nutriments: [String: Double]? = nil,
+        nutritionOther: String? = nil,
         servingSize: String? = nil, servingQuantity: Double? = nil
     ) async -> Bool {
         var payload: [String: Any] = [:]
@@ -418,6 +474,7 @@ final class ProductRepository {
         if let stores { payload["stores"] = stores }
         if let storesRegion { payload["stores_region"] = storesRegion }
         if let nutriments, !nutriments.isEmpty { payload["nutriments"] = nutriments }
+        if let nutritionOther { payload["nutrition_other"] = nutritionOther }
         if let servingSize { payload["serving_size"] = servingSize }
         if let servingQuantity { payload["serving_quantity"] = servingQuantity }
         var request = URLRequest(
