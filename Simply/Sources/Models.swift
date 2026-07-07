@@ -39,6 +39,9 @@ struct AdditiveEntry: Decodable {
     var evidenceSources: [String]?
     var regionStatus: [String: String]?
     var synonyms: [String]?
+    /// Acceptable daily intake (EFSA/JECFA), mg per kg body weight per day.
+    /// Absent when no ADI is established or when the ADI was withdrawn.
+    var adiMgPerKg: Double?
 }
 
 struct Additive: Identifiable {
@@ -54,6 +57,8 @@ struct Additive: Identifiable {
     let explicitWarningCategory: String?
     let explicitEvidenceSources: [String]
     let explicitRegionStatus: [String: String]
+    /// Acceptable daily intake, mg per kg body weight per day, when established.
+    let adiMgPerKg: Double?
 
     var displayName: String {
         usName.map { "\(name) (\($0))" } ?? name
@@ -136,6 +141,7 @@ struct Additive: Identifiable {
         explicitWarningCategory = entry.warningCategory
         explicitEvidenceSources = entry.evidenceSources ?? []
         explicitRegionStatus = entry.regionStatus ?? [:]
+        adiMgPerKg = entry.adiMgPerKg
     }
 }
 
@@ -178,6 +184,7 @@ struct Product {
     let ingredientsText: String?
     let servingSize: String?
     let servingQuantity: Double?
+    let stores: [String]           // chains carrying this product
     let nutriments: Nutriments?
     let sourceDb: String?
 
@@ -221,7 +228,89 @@ struct ProductDTO: Decodable {
     var ingredients_text: String?
     var serving_size: String?
     var serving_quantity: Double?
+    var stores: String?
+    var stores_tags: [String]?
     var nutriments: NutrimentsDTO?
+}
+
+/// Normalizes the free-text Open Food Facts "stores" field (comma-separated
+/// chain names, typed by the community) into clean display names: trimmed,
+/// known chains in their canonical casing, duplicates removed. Falls back
+/// to "stores_tags" slugs when the free-text field is empty.
+enum StoreNames {
+
+    private static let known: [String: String] = [
+        "aldi": "Aldi",
+        "albertsons": "Albertsons",
+        "amazon": "Amazon",
+        "costco": "Costco",
+        "cvs": "CVS",
+        "dollar general": "Dollar General",
+        "dollar tree": "Dollar Tree",
+        "food lion": "Food Lion",
+        "giant": "Giant",
+        "h e b": "H-E-B",
+        "h-e-b": "H-E-B",
+        "heb": "H-E-B",
+        "kroger": "Kroger",
+        "lidl": "Lidl",
+        "meijer": "Meijer",
+        "publix": "Publix",
+        "safeway": "Safeway",
+        "sam s club": "Sam's Club",
+        "sam's club": "Sam's Club",
+        "sams club": "Sam's Club",
+        "7 eleven": "7-Eleven",
+        "7-eleven": "7-Eleven",
+        "sprouts": "Sprouts",
+        "sprouts farmers market": "Sprouts",
+        "stop & shop": "Stop & Shop",
+        "stop and shop": "Stop & Shop",
+        "target": "Target",
+        "trader joe s": "Trader Joe's",
+        "trader joe's": "Trader Joe's",
+        "trader joes": "Trader Joe's",
+        "vons": "Vons",
+        "wal-mart": "Walmart",
+        "walgreens": "Walgreens",
+        "walmart": "Walmart",
+        "wegmans": "Wegmans",
+        "whole foods": "Whole Foods",
+        "whole foods market": "Whole Foods",
+        "winco": "WinCo Foods",
+        "winco foods": "WinCo Foods",
+    ]
+
+    static func normalize(stores: String?, storesTags: [String] = []) -> [String] {
+        let raw: [String]
+        if let stores, !stores.trimmingCharacters(in: .whitespaces).isEmpty {
+            raw = stores.split(separator: ",").map(String.init)
+        } else {
+            raw = storesTags.map { tag in
+                (tag.split(separator: ":").last.map(String.init) ?? tag)
+                    .replacingOccurrences(of: "-", with: " ")
+            }
+        }
+        var seen = Set<String>()
+        var result: [String] = []
+        for name in raw {
+            let trimmed = name.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else { continue }
+            let display = known[trimmed.lowercased()] ?? titleCaseIfLower(trimmed)
+            if seen.insert(display.lowercased()).inserted {
+                result.append(display)
+            }
+        }
+        return result
+    }
+
+    /// Community data is often all-lowercase; leave mixed case as typed.
+    private static func titleCaseIfLower(_ raw: String) -> String {
+        guard raw == raw.lowercased() else { return raw }
+        return raw.split(separator: " ")
+            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
+    }
 }
 
 struct NutrimentsDTO: Decodable {

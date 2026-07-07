@@ -203,6 +203,11 @@ struct ProductView: View {
                 if let quantity = product.quantity {
                     Text(quantity).font(.caption).foregroundStyle(.secondary)
                 }
+                if !product.stores.isEmpty {
+                    Text("Available at: \(product.stores.joined(separator: ", "))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -292,8 +297,16 @@ struct ProductView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
-            ForEach(product.additives.sorted { $0.effectiveRisk > $1.effectiveRisk }) {
-                AdditiveRow(additive: $0)
+            ForEach(product.additives.sorted { $0.effectiveRisk > $1.effectiveRisk }) { additive in
+                // Dose vs. daily limit only makes sense for things you eat.
+                let doseText: String? = score.kind == .food
+                    ? AdiEstimator.estimate(
+                        additive: additive,
+                        ingredientsText: product.ingredientsText,
+                        servingQuantityG: product.servingQuantity
+                      )?.displayText ?? AdiEstimator.notEstimated
+                    : nil
+                AdditiveRow(additive: additive, doseText: doseText)
             }
             ForEach(product.unratedAdditives) { unrated in
                 Label("\(unrated.eNumber) — not yet rated", systemImage: "circle.fill")
@@ -629,6 +642,7 @@ struct AdditiveSummaryRow: View {
 
 struct AdditiveRow: View {
     let additive: Additive
+    var doseText: String?
     @State private var expanded = false
 
     var body: some View {
@@ -655,6 +669,11 @@ struct AdditiveRow: View {
                             } else if additive.euStatus == .restricted {
                                 chip("EU: restricted", .riskModerate)
                             }
+                        }
+                        if let doseText {
+                            Text(doseText)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                         }
                         if !expanded {
                             Text(additive.note)

@@ -83,10 +83,15 @@ struct SubmitView: View {
     @State private var pickingField: String?
     @State private var ocrText = ""
     @State private var ocrRan = false
+    @State private var store = ""
     @State private var saving = false
     @State private var resultMessage: String?
 
-    private var hasWork: Bool { !captured.isEmpty || !ocrText.isEmpty }
+    private var hasWork: Bool {
+        !captured.isEmpty
+            || !ocrText.trimmingCharacters(in: .whitespaces).isEmpty
+            || !store.trimmingCharacters(in: .whitespaces).isEmpty
+    }
 
     var body: some View {
         NavigationStack {
@@ -117,6 +122,14 @@ struct SubmitView: View {
                             .padding(6)
                             .overlay(RoundedRectangle(cornerRadius: 8)
                                 .stroke(.quaternary))
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Store (optional)")
+                            .font(.subheadline)
+                        TextField("e.g. Costco, Walmart", text: $store)
+                            .textFieldStyle(.roundedBorder)
+                            .onChange(of: store) { _ in resultMessage = nil }
                     }
                 }
                 .padding()
@@ -198,24 +211,30 @@ struct SubmitView: View {
                     okPhotos += 1
                 }
             }
+            let ingredients = ocrText.trimmingCharacters(in: .whitespaces)
+            let storeName = store.trimmingCharacters(in: .whitespaces)
             var factsOk: Bool?
-            if !ocrText.trimmingCharacters(in: .whitespaces).isEmpty {
+            if !ingredients.isEmpty || !storeName.isEmpty {
                 factsOk = await ProductRepository.shared.submitFacts(
                     barcode: barcode,
-                    ingredientsText: ocrText.trimmingCharacters(in: .whitespaces))
+                    ingredientsText: ingredients.isEmpty ? nil : ingredients,
+                    stores: storeName.isEmpty ? nil : storeName)
             }
             saving = false
             if !captured.isEmpty, okPhotos < captured.count {
                 resultMessage = "Uploaded \(okPhotos) of \(captured.count) photos — check your connection and tap Save again."
             } else if factsOk == false {
-                resultMessage = "Photos uploaded, but the ingredient list didn't save — tap Save again."
+                resultMessage = "Photos uploaded, but the product details didn't save — tap Save again."
             } else if okPhotos == 0, factsOk == nil {
                 resultMessage = "Nothing to save yet — take a photo first."
             } else {
                 var parts: [String] = []
                 if okPhotos > 0 { parts.append("\(okPhotos) photo\(okPhotos == 1 ? "" : "s")") }
-                if factsOk == true { parts.append("the ingredient list") }
-                resultMessage = "Saved \(parts.joined(separator: " + ")) — thank you! The product will refresh shortly."
+                if factsOk == true {
+                    if !ingredients.isEmpty { parts.append("the ingredient list") }
+                    if !storeName.isEmpty { parts.append("the store") }
+                }
+                resultMessage = "Saved \(parts.joined(separator: " + ")) — thank you! Your submission will appear once it's reviewed."
             }
         }
     }

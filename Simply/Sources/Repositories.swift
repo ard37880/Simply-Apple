@@ -209,6 +209,65 @@ enum PetIngredientFlagger {
     }
 }
 
+// MARK: - Offline product cache (raw response JSON, keyed by barcode)
+
+/// On-device cache of successfully looked-up products, one JSON file per
+/// barcode. Lets previously scanned products load with no connectivity
+/// (e.g. airplane mode). Capped at `maxEntries`; oldest files (by last
+/// write) are pruned first.
+final class ProductCache {
+    static let shared = ProductCache()
+
+    private static let maxEntries = 500
+    private let directory: URL
+
+    private init() {
+        directory = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("ProductCache", isDirectory: true)
+        try? FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true)
+    }
+
+    func store(_ data: Data, barcode: String) {
+        guard let url = fileUrl(for: barcode) else { return }
+        try? data.write(to: url, options: .atomic)
+        prune()
+    }
+
+    func load(barcode: String) -> ProductResponse? {
+        guard let url = fileUrl(for: barcode),
+              let data = try? Data(contentsOf: url)
+        else { return nil }
+        return try? JSONDecoder().decode(ProductResponse.self, from: data)
+    }
+
+    /// Barcodes come from the scanner or manual entry; only cache safe names.
+    private func fileUrl(for barcode: String) -> URL? {
+        guard !barcode.isEmpty,
+              barcode.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" })
+        else { return nil }
+        return directory.appendingPathComponent("\(barcode).json")
+    }
+
+    private func prune() {
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: .skipsHiddenFiles
+        ), files.count > Self.maxEntries else { return }
+
+        let dated = files.map { url -> (URL, Date) in
+            let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate ?? .distantPast
+            return (url, date)
+        }
+        for (url, _) in dated.sorted(by: { $0.1 < $1.1 }).prefix(files.count - Self.maxEntries) {
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+}
+
 // MARK: - API client (Simply server first, Open Food Facts fallback)
 
 final class ProductRepository {
@@ -225,17 +284,44 @@ final class ProductRepository {
 
     func lookup(barcode: String) async -> Lookup {
         let path = "api/v2/product/\(barcode)"
-        var response: ProductResponse?
+        var networkUnreachable = false
+        var serverError: String?
         for base in [Self.serverBase, Self.offBase] {
             var request = URLRequest(url: base.appendingPathComponent(path))
             request.setValue("Simply-iOS/1.0 (Studio86)", forHTTPHeaderField: "User-Agent")
-            if let (data, _) = try? await URLSession.shared.data(for: request),
-               let decoded = try? JSONDecoder().decode(ProductResponse.self, from: data) {
-                response = decoded
-                break
-            }
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                if (200..<300).contains(status) {
+                    guard let decoded = try? JSONDecoder().decode(ProductResponse.self, from: data)
+                    else { continue }
+                    // A decoded not-found (status != 1) is authoritative —
+                    // never serve a stale cached copy in that case.
+                    if decoded.status == 1, decoded.product != nil {
+                        ProductCache.shared.store(data, barcode: barcode)
+                    }
+                    return found(decoded, barcode: barcode)
+                }
+                if status == 404, base == Self.offBase {
+                    // OFF answers unknown barcodes with 404 — authoritative.
+                    return .notFound
+                }
+                // Upstream trouble (e.g. a 502 error body from the Simply
+                // server): try the next base rather than trusting it.
+                serverError = "Server error (\(status))"
+            } catch is URLError {
+                networkUnreachable = true
+            } catch {}
         }
-        guard let response else { return .error("Network error") }
+        // No connectivity: fall back to the last good copy so previously
+        // scanned products still work offline.
+        if networkUnreachable, let cached = ProductCache.shared.load(barcode: barcode) {
+            return found(cached, barcode: barcode)
+        }
+        return .error(serverError ?? "Network error")
+    }
+
+    private func found(_ response: ProductResponse, barcode: String) -> Lookup {
         guard response.status == 1, let dto = response.product else { return .notFound }
 
         let product = Self.toDomain(dto, barcode: barcode, sourceDb: response.simply_source)
@@ -317,13 +403,17 @@ final class ProductRepository {
         return (200..<300).contains(http.statusCode)
     }
 
-    func submitFacts(barcode: String, ingredientsText: String) async -> Bool {
+    func submitFacts(
+        barcode: String, ingredientsText: String? = nil, stores: String? = nil
+    ) async -> Bool {
+        var payload: [String: String] = [:]
+        if let ingredientsText { payload["ingredients_text"] = ingredientsText }
+        if let stores { payload["stores"] = stores }
         var request = URLRequest(
             url: Self.serverBase.appendingPathComponent("api/v2/product/\(barcode)/facts"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONSerialization.data(
-            withJSONObject: ["ingredients_text": ingredientsText])
+        request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
         guard let (_, response) = try? await URLSession.shared.data(for: request),
               let http = response as? HTTPURLResponse
         else { return false }
@@ -376,6 +466,7 @@ final class ProductRepository {
             ingredientsText: dto.ingredients_text?.isEmpty == false ? dto.ingredients_text : nil,
             servingSize: dto.serving_size,
             servingQuantity: dto.serving_quantity.flatMap { $0 > 0 ? $0 : nil },
+            stores: StoreNames.normalize(stores: dto.stores, storesTags: dto.stores_tags ?? []),
             nutriments: dto.nutriments.map {
                 Nutriments(
                     energyKj: $0.energyKj100g, energyKcal: $0.energyKcal100g,
