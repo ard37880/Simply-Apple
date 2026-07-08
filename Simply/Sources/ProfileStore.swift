@@ -32,7 +32,12 @@ final class ProfileStore: ObservableObject {
     @AppStorage("profile.allergens") private var allergensRaw: String = ""
 
     var diets: Set<String> {
-        get { Set(dietsRaw.split(separator: ",").map(String.init)) }
+        // Chips removed in 1.9 (carnivore, no_pork, no_beef, no_alcohol)
+        // may still be stored on older installs — drop them on read.
+        get {
+            Set(dietsRaw.split(separator: ",").map(String.init))
+                .intersection(Self.knownDietKeys)
+        }
         set { dietsRaw = newValue.sorted().joined(separator: ",") }
     }
 
@@ -55,30 +60,37 @@ final class ProfileStore: ObservableObject {
         allergens = a
     }
 
+    // Actual ways of eating. Halal covers pork and alcohol; the old
+    // standalone no-pork / no-beef / no-alcohol / carnivore chips were
+    // removed (stored keys from older installs are dropped on read).
     static let dietOptions: [DietOption] = [
         .init(key: "vegetarian", label: "Vegetarian"),
         .init(key: "vegan", label: "Vegan"),
         .init(key: "pescatarian", label: "Pescatarian"),
         .init(key: "halal", label: "Halal"),
         .init(key: "kosher", label: "Kosher"),
-        .init(key: "carnivore", label: "Carnivore"),
         .init(key: "keto", label: "Keto / low-carb"),
         .init(key: "paleo", label: "Paleo"),
         .init(key: "low_sodium", label: "Low sodium"),
         .init(key: "anti_inflammatory", label: "Anti-inflammatory"),
-        .init(key: "no_pork", label: "No pork"),
-        .init(key: "no_beef", label: "No beef"),
-        .init(key: "no_alcohol", label: "No alcohol"),
-        .init(key: "no_palm_oil", label: "Avoid palm oil"),
-        .init(key: "no_seed_oils", label: "Avoid seed oils"),
-        .init(key: "no_hydrogenated", label: "Avoid hydrogenated oils"),
-        .init(key: "no_artificial_sweeteners", label: "Avoid artificial sweeteners"),
-        .init(key: "no_artificial_colors", label: "Avoid artificial dyes"),
-        .init(key: "no_hfcs", label: "Avoid high-fructose corn syrup"),
-        .init(key: "no_msg", label: "Avoid MSG"),
-        .init(key: "no_nitrites", label: "Avoid nitrites/nitrates"),
-        .init(key: "no_caffeine", label: "Avoid caffeine"),
     ]
+
+    // Specific ingredients to flag — its own profile section, same
+    // underlying storage set as dietOptions so nothing migrates.
+    static let avoidOptions: [DietOption] = [
+        .init(key: "no_palm_oil", label: "Palm oil"),
+        .init(key: "no_seed_oils", label: "Seed oils"),
+        .init(key: "no_hydrogenated", label: "Hydrogenated oils"),
+        .init(key: "no_artificial_sweeteners", label: "Artificial sweeteners"),
+        .init(key: "no_artificial_colors", label: "Artificial dyes"),
+        .init(key: "no_hfcs", label: "High-fructose corn syrup"),
+        .init(key: "no_msg", label: "MSG"),
+        .init(key: "no_nitrites", label: "Nitrites/nitrates"),
+        .init(key: "no_caffeine", label: "Caffeine"),
+    ]
+
+    static let knownDietKeys: Set<String> =
+        Set((dietOptions + avoidOptions).map(\.key))
 
     static let allergenOptions: [AllergenOption] = [
         .init(key: "gluten", label: "Gluten / wheat", offTag: "en:gluten"),
@@ -149,16 +161,6 @@ enum PreferenceChecker {
         let grainsAndSugars = ["wheat", "corn", "rice", "oat", "barley", "flour", "sugar",
                                "corn syrup", "maltodextrin"]
 
-        if diets.contains("no_pork"), porkWords.contains(where: text.contains) {
-            hits.append(.init(label: "Contains pork", severity: .contains))
-        }
-        if diets.contains("no_beef"), ["beef", "beef tallow", "beef fat"].contains(where: text.contains) {
-            hits.append(.init(label: "Contains beef", severity: .contains))
-        }
-        if diets.contains("no_alcohol"),
-           let match = alcoholWords.first(where: text.contains) {
-            hits.append(.init(label: "Contains alcohol (\(match) is an ingredient)", severity: .likely))
-        }
         if diets.contains("pescatarian"), landMeat.contains(where: text.contains) {
             hits.append(.init(label: "Contains meat (not pescatarian)", severity: .contains))
         }
@@ -179,9 +181,6 @@ enum PreferenceChecker {
             } else if text.contains("gelatin"), !text.contains("fish gelatin") {
                 hits.append(.init(label: "May not be kosher (unspecified gelatin)", severity: .likely))
             }
-        }
-        if diets.contains("carnivore"), grainsAndSugars.contains(where: text.contains) {
-            hits.append(.init(label: "Contains plant ingredients (not carnivore)", severity: .contains))
         }
         if diets.contains("keto"), let sugars = product.nutriments?.sugars, sugars > 5 {
             hits.append(.init(

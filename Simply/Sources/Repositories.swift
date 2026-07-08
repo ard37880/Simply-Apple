@@ -543,9 +543,11 @@ final class ProductRepository {
                     fat: $0.fat100g, saturatedFat: $0.saturatedFat100g,
                     sugars: $0.sugars100g, salt: $0.salt100g, sodium: $0.sodium100g,
                     fiber: $0.fiber100g, proteins: $0.proteins100g,
-                    fruitsVegNuts: $0.fruitsVegNuts100g)
+                    fruitsVegNuts: $0.fruitsVegNuts100g,
+                    all: $0.all)
             },
-            sourceDb: sourceDb
+            sourceDb: sourceDb,
+            nutritionOther: dto.nutrition_other?.isEmpty == false ? dto.nutrition_other : nil
         )
     }
 }

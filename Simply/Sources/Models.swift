@@ -82,21 +82,32 @@ struct Additive: Identifiable {
         }
     }
 
+    /// Japan/Canada verdicts come from the database's per-entry
+    /// regionStatus (researched against Japan's positive lists and Health
+    /// Canada's permitted lists); the EU line stays derived from euStatus
+    /// so the two can never disagree. The "not verified" fallback only
+    /// fires for an entry the database hasn't covered yet.
     var regionStatus: [(String, String)] {
-        if !explicitRegionStatus.isEmpty {
-            return explicitRegionStatus.sorted { $0.key < $1.key }
-        }
         var rows: [(String, String)] = []
         switch euStatus {
         case .banned: rows.append(("EU", "Not permitted in food"))
-        case .restricted: rows.append(("EU", "Restricted — check permitted use list"))
+        case .restricted: rows.append(("EU", "Restricted — permitted only for specific uses"))
         case .approved: rows.append(("EU", "Permitted"))
         }
-        rows.append(("Japan", notPermittedIn.contains("Japan")
-            ? "Not on positive list" : "Check positive list (MHLW/CAA)"))
-        rows.append(("Canada", notPermittedIn.contains("Canada")
-            ? "Not on permitted list" : "Check permitted use lists (Health Canada)"))
-        for region in notPermittedIn where region != "Japan" && region != "Canada" {
+        rows.append(("Japan", explicitRegionStatus["Japan"]
+            ?? (notPermittedIn.contains("Japan")
+                ? "Not permitted (not on the positive list)"
+                : "Not yet individually verified")))
+        rows.append(("Canada", explicitRegionStatus["Canada"]
+            ?? (notPermittedIn.contains("Canada")
+                ? "Not permitted (not on Health Canada's lists)"
+                : "Not yet individually verified")))
+        for (region, status) in explicitRegionStatus.sorted(by: { $0.key < $1.key })
+        where !rows.contains(where: { $0.0 == region }) {
+            rows.append((region, status))
+        }
+        for region in notPermittedIn
+        where !rows.contains(where: { $0.0 == region }) {
             rows.append((region, "Not permitted in food"))
         }
         return rows
@@ -162,6 +173,8 @@ struct UnratedAdditive: Identifiable {
 struct Nutriments {
     var energyKj, energyKcal, fat, saturatedFat, sugars,
         salt, sodium, fiber, proteins, fruitsVegNuts: Double?
+    /// Every per-100g nutriment the record carries, by OFF key.
+    var all: [String: Double] = [:]
 }
 
 struct Product {
@@ -187,6 +200,8 @@ struct Product {
     let stores: [String]           // chains carrying this product
     let nutriments: Nutriments?
     let sourceDb: String?
+    /// Free-text label nutrients with no OFF key, from our overrides.
+    var nutritionOther: String? = nil
 
     var kind: ProductKind {
         switch sourceDb {
@@ -231,6 +246,9 @@ struct ProductDTO: Decodable {
     var stores: String?
     var stores_tags: [String]?
     var nutriments: NutrimentsDTO?
+    // Admin-approved free-text nutrients with no OFF key — served from
+    // our overrides only.
+    var nutrition_other: String?
 }
 
 /// Normalizes the free-text Open Food Facts "stores" field (comma-separated
@@ -411,22 +429,45 @@ enum StoreNames {
     }
 }
 
+/// Decodes the whole nutriments map so every nutrient OFF knows about
+/// survives (vitamins, minerals, trans fat, …), not just the scored
+/// handful. OFF occasionally serves numbers as strings, so both parse.
 struct NutrimentsDTO: Decodable {
     var energyKj100g, energyKcal100g, fat100g, saturatedFat100g,
         sugars100g, salt100g, sodium100g, fiber100g, proteins100g,
         fruitsVegNuts100g: Double?
+    /// Every per-100g nutriment the record carries, by OFF key.
+    var all: [String: Double] = [:]
 
-    enum CodingKeys: String, CodingKey {
-        case energyKj100g = "energy-kj_100g"
-        case energyKcal100g = "energy-kcal_100g"
-        case fat100g = "fat_100g"
-        case saturatedFat100g = "saturated-fat_100g"
-        case sugars100g = "sugars_100g"
-        case salt100g = "salt_100g"
-        case sodium100g = "sodium_100g"
-        case fiber100g = "fiber_100g"
-        case proteins100g = "proteins_100g"
-        case fruitsVegNuts100g = "fruits-vegetables-nuts-estimate-from-ingredients_100g"
+    private struct AnyKey: CodingKey {
+        var stringValue: String
+        init?(stringValue: String) { self.stringValue = stringValue }
+        var intValue: Int? { nil }
+        init?(intValue: Int) { nil }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: AnyKey.self)
+        var values: [String: Double] = [:]
+        for key in container.allKeys where key.stringValue.hasSuffix("_100g") {
+            if let num = try? container.decode(Double.self, forKey: key) {
+                values[key.stringValue] = num
+            } else if let str = try? container.decode(String.self, forKey: key),
+                      let num = Double(str) {
+                values[key.stringValue] = num
+            }
+        }
+        all = values
+        energyKj100g = values["energy-kj_100g"]
+        energyKcal100g = values["energy-kcal_100g"]
+        fat100g = values["fat_100g"]
+        saturatedFat100g = values["saturated-fat_100g"]
+        sugars100g = values["sugars_100g"]
+        salt100g = values["salt_100g"]
+        sodium100g = values["sodium_100g"]
+        fiber100g = values["fiber_100g"]
+        proteins100g = values["proteins_100g"]
+        fruitsVegNuts100g = values["fruits-vegetables-nuts-estimate-from-ingredients_100g"]
     }
 }
 

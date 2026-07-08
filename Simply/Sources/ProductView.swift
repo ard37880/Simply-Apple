@@ -198,6 +198,13 @@ struct ProductView: View {
                         .padding(.top, 6)
                 }
 
+                if !score.ingredientBased {
+                    AllNutrientsSection(
+                        product: product,
+                        servingFactor: servingFactor,
+                        perServing: perServing)
+                }
+
                 if !alternatives.isEmpty {
                     sectionHeading("Better options in this category")
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -633,6 +640,107 @@ struct Metric: Identifiable {
                 higherIsBetter: true))
         }
         return metrics
+    }
+}
+
+/// Every other nutrient on the record (trans fat, cholesterol, vitamins,
+/// minerals, …) behind a tap-to-expand card, labeled and unit-converted
+/// via the same catalog the submit flow uses. Follows the per-100g /
+/// per-serving toggle like the gauges above. Mirrors Android.
+struct AllNutrientsSection: View {
+    let product: Product
+    let servingFactor: Double
+    let perServing: Bool
+    @State private var expanded = false
+
+    // Nutriment keys already shown as gauges in Negatives/Positives.
+    private static let gaugeKeys: Set<String> = [
+        "energy-kcal_100g", "sugars_100g", "saturated-fat_100g",
+        "sodium_100g", "proteins_100g", "fiber_100g",
+    ]
+
+    private struct RowItem: Identifiable {
+        let id: String
+        let label: String
+        let value: String
+    }
+
+    private var rows: [RowItem] {
+        let values = product.nutriments?.all ?? [:]
+        return nutrientFields.compactMap { field in
+            guard let key = field.offKey,
+                  !Self.gaugeKeys.contains(key),
+                  let per100 = values[key] else { return nil }
+            // OFF stores grams per 100 g; convert into the label's unit.
+            let display = per100 * servingFactor * field.unit.perGram
+            return RowItem(
+                id: key, label: field.label,
+                value: "\(Self.format(display)) \(field.unit.rawValue)")
+        }
+    }
+
+    private var otherLines: [String] {
+        (product.nutritionOther ?? "")
+            .split(separator: ";")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+
+    var body: some View {
+        let rows = rows
+        let other = otherLines
+        if !rows.isEmpty || !other.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                Button {
+                    withAnimation { expanded.toggle() }
+                } label: {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("More nutrition facts (\(rows.count + other.count))")
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(.primary)
+                            Text(perServing ? "Per serving" : "Per 100 g")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if expanded {
+                    ForEach(rows) { row in
+                        Divider().padding(.vertical, 8)
+                        HStack {
+                            Text(row.label).font(.subheadline)
+                            Spacer()
+                            Text(row.value).font(.subheadline.weight(.semibold))
+                        }
+                    }
+                    ForEach(other, id: \.self) { line in
+                        Divider().padding(.vertical, 8)
+                        Text(line).font(.subheadline)
+                    }
+                }
+            }
+            .padding(16)
+            .background(Color.simplyCard, in: RoundedRectangle(cornerRadius: 12))
+            .padding(.vertical, 8)
+        }
+    }
+
+    private static func format(_ value: Double) -> String {
+        if value == 0 { return "0" }
+        if abs(value) >= 100 { return String(Int(value.rounded())) }
+        let text = abs(value) >= 0.1
+            ? String(format: "%.2f", value)
+            : String(format: "%.3f", value)
+        return text.replacingOccurrences(
+            of: "\\.?0+$", with: "", options: .regularExpression)
     }
 }
 

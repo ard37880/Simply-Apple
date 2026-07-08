@@ -69,7 +69,6 @@ struct NutritionWeights: Equatable {
     // calorie-minimization or weight-loss preference.
     private static let dietWeights: [String: NutritionWeights] = [
         "keto": NutritionWeights(sugar: 2.0, satFat: 0.5, calories: 0.5),
-        "carnivore": NutritionWeights(satFat: 0.5, protein: 1.5),
         "paleo": NutritionWeights(sugar: 1.5, sweetener: 1.5),
         "low_sodium": NutritionWeights(sodium: 2.0),
         "anti_inflammatory": NutritionWeights(sugar: 1.5, sweetener: 1.5),

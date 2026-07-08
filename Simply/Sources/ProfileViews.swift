@@ -8,16 +8,28 @@ struct PreferenceEditor: View {
     @EnvironmentObject var profile: ProfileStore
     var collapsible = false
     @State private var dietsExpanded = false
+    @State private var avoidsExpanded = false
     @State private var allergensExpanded = false
 
     var body: some View {
+        // Diets and avoid-ingredients share the same stored set; they're
+        // separate sections purely so actual diets don't drown in flags.
+        let dietKeys = Set(ProfileStore.dietOptions.map(\.key))
+        let avoidKeys = Set(ProfileStore.avoidOptions.map(\.key))
         VStack(alignment: .leading, spacing: 12) {
             TextField("Name (optional)", text: $profile.name)
                 .textFieldStyle(.roundedBorder)
 
-            section(title: "Diet preferences", count: profile.diets.count,
+            section(title: "Diet preferences",
+                    count: profile.diets.intersection(dietKeys).count,
                     expanded: $dietsExpanded) {
                 chipGrid(ProfileStore.dietOptions.map { ($0.key, $0.label) },
+                         selected: profile.diets) { profile.toggleDiet($0) }
+            }
+            section(title: "Ingredients to avoid",
+                    count: profile.diets.intersection(avoidKeys).count,
+                    expanded: $avoidsExpanded) {
+                chipGrid(ProfileStore.avoidOptions.map { ($0.key, $0.label) },
                          selected: profile.diets) { profile.toggleDiet($0) }
             }
             section(title: "Allergens to flag", count: profile.allergens.count,

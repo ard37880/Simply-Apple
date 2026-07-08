@@ -15,16 +15,38 @@ struct HomeView: View {
     private var recent: [ScanRecord] { Array(history.records.prefix(5)) }
 
     var body: some View {
-        // Fixed header + footer; only the recent-scans list scrolls.
+        // Fixed header; only the recent-scans list scrolls. Profile lives
+        // as an avatar button beside the greeting — nothing overlays the
+        // list. Mirrors Android.
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
                 let name = profile.name.trimmingCharacters(in: .whitespaces)
-                Text(name.isEmpty ? "Welcome" : "Hi \(name)")
-                    .font(.largeTitle.bold())
-                Text("What are you checking today?")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 4)
+                HStack(alignment: .center, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(name.isEmpty ? "Welcome" : "Hi \(name)")
+                            .font(.largeTitle.bold())
+                        Text("What are you checking today?")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 4)
+                    }
+                    Spacer()
+                    Button(action: onProfile) {
+                        Group {
+                            if name.isEmpty {
+                                Image(systemName: "person.fill")
+                            } else {
+                                Text(name.prefix(1).uppercased())
+                                    .font(.title3.bold())
+                            }
+                        }
+                        .foregroundStyle(Color.riskNone)
+                        .frame(width: 48, height: 48)
+                        .background(Color.simplyCard, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Your profile")
+                }
 
                 Button(action: onScan) {
                     HStack(spacing: 12) {
@@ -65,57 +87,37 @@ struct HomeView: View {
             .padding(.horizontal, 20)
 
             // The only scrollable region: the recent-scans list fills the
-            // space between the fixed header above and the overlaid footer
-            // below. The list scrolls under the footer and fades into the
-            // background via a gradient scrim, so there is no hard clipping edge.
-            ZStack(alignment: .bottom) {
-                ScrollView {
-                    Group {
-                        if recent.isEmpty {
-                            Text("Scan your first product to get started.")
-                                .font(.body)
-                                .foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(20)
-                                .background(Color.simplyCard,
-                                            in: RoundedRectangle(cornerRadius: 16))
-                                .padding(.top, 8)
-                                .padding(.horizontal, 20)
-                        } else {
-                            VStack(spacing: 10) {
-                                ForEach(recent) { record in
-                                    Button {
-                                        onProduct(record.barcode)
-                                    } label: {
-                                        recentCard(record)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
+            // space below the fixed header, with nothing overlaid on it.
+            ScrollView {
+                Group {
+                    if recent.isEmpty {
+                        Text("Scan your first product to get started.")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(20)
+                            .background(Color.simplyCard,
+                                        in: RoundedRectangle(cornerRadius: 16))
                             .padding(.top, 8)
                             .padding(.horizontal, 20)
+                    } else {
+                        VStack(spacing: 10) {
+                            ForEach(recent) { record in
+                                Button {
+                                    onProduct(record.barcode)
+                                } label: {
+                                    recentCard(record)
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
+                        .padding(.top, 8)
+                        .padding(.horizontal, 20)
                     }
-                    .padding(.bottom, 72)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                // Fixed footer — always visible without scrolling. Overlaid on
-                // the list with a transparent-to-background gradient scrim so
-                // items dissolve smoothly as they scroll underneath.
-                Button("Your profile", action: onProfile)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 8)
-                    .padding(.bottom, 16)
-                    .padding(.horizontal, 20)
-                    .background(
-                        LinearGradient(
-                            colors: [Color.simplyPaper.opacity(0), Color.simplyPaper],
-                            startPoint: .top,
-                            endPoint: .bottom)
-                    )
+                .padding(.bottom, 16)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .simplyScreenBackground()
         .navigationTitle("Simply Pure")
