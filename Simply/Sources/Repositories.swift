@@ -467,9 +467,11 @@ final class ProductRepository {
         barcode: String, ingredientsText: String? = nil, stores: String? = nil,
         storesRegion: String? = nil, nutriments: [String: Double]? = nil,
         nutritionOther: String? = nil,
-        servingSize: String? = nil, servingQuantity: Double? = nil
+        servingSize: String? = nil, servingQuantity: Double? = nil,
+        productName: String? = nil
     ) async -> Bool {
         var payload: [String: Any] = [:]
+        if let productName { payload["product_name"] = productName }
         if let ingredientsText { payload["ingredients_text"] = ingredientsText }
         if let stores { payload["stores"] = stores }
         if let storesRegion { payload["stores_region"] = storesRegion }

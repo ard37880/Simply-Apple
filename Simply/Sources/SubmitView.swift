@@ -253,6 +253,7 @@ struct SubmitView: View {
     @State private var ocrText = ""
     @State private var ocrRan = false
     @State private var store = ""
+    @State private var productName = ""
     @State private var nutrition: [String: String] = [:]
     @State private var nutritionOcrRan = false
     @State private var nutritionOcrFound = false
@@ -266,6 +267,7 @@ struct SubmitView: View {
         !captured.isEmpty
             || !ocrText.trimmingCharacters(in: .whitespaces).isEmpty
             || !store.trimmingCharacters(in: .whitespaces).isEmpty
+            || !productName.trimmingCharacters(in: .whitespaces).isEmpty
             || nutrition.values.contains {
                 !$0.trimmingCharacters(in: .whitespaces).isEmpty
             }
@@ -311,6 +313,14 @@ struct SubmitView: View {
                     // ingredient editor.
                     if kind == .food, nutritionOcrRan {
                         nutritionSection
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Product name (optional)")
+                            .font(.subheadline)
+                        TextField("As printed on the package", text: $productName)
+                            .textFieldStyle(.roundedBorder)
+                            .onChange(of: productName) { _ in resultMessage = nil }
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
@@ -530,6 +540,7 @@ struct SubmitView: View {
             }
             let ingredients = ocrText.trimmingCharacters(in: .whitespaces)
             let storeName = store.trimmingCharacters(in: .whitespaces)
+            let productNameText = productName.trimmingCharacters(in: .whitespaces)
             // Nutrition values are entered per serving; convert to per 100 g
             // using the serving grams. Without serving grams they can't be
             // converted, so they're skipped and the message says so.
@@ -574,7 +585,7 @@ struct SubmitView: View {
             }
             var factsOk: Bool?
             if !ingredients.isEmpty || !storeName.isEmpty || servingG != nil
-                || !otherText.isEmpty {
+                || !otherText.isEmpty || !productNameText.isEmpty {
                 // Coarse "City, State" tag, only when a store is being
                 // reported and the user opted in.
                 let region = (!storeName.isEmpty && ProfileStore.shared.locationTagging)
@@ -588,7 +599,8 @@ struct SubmitView: View {
                     nutriments: nutriments,
                     nutritionOther: otherText.isEmpty ? nil : otherText,
                     servingSize: servingSizeText,
-                    servingQuantity: servingG)
+                    servingQuantity: servingG,
+                    productName: productNameText.isEmpty ? nil : productNameText)
             }
             saving = false
             if !captured.isEmpty, okPhotos < captured.count {
@@ -603,6 +615,7 @@ struct SubmitView: View {
                 var parts: [String] = []
                 if okPhotos > 0 { parts.append("\(okPhotos) photo\(okPhotos == 1 ? "" : "s")") }
                 if factsOk == true {
+                    if !productNameText.isEmpty { parts.append("the product name") }
                     if !ingredients.isEmpty { parts.append("the ingredient list") }
                     if nutriments != nil || !otherText.isEmpty { parts.append("the nutrition facts") }
                     else if servingG != nil { parts.append("the serving size") }
