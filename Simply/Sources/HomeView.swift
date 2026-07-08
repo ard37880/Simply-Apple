@@ -65,42 +65,57 @@ struct HomeView: View {
             .padding(.horizontal, 20)
 
             // The only scrollable region: the recent-scans list fills the
-            // space between the fixed header above and the fixed footer below.
-            ScrollView {
-                if recent.isEmpty {
-                    Text("Scan your first product to get started.")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(20)
-                        .background(Color.simplyCard,
-                                    in: RoundedRectangle(cornerRadius: 16))
-                        .padding(.top, 8)
-                        .padding(.horizontal, 20)
-                } else {
-                    VStack(spacing: 10) {
-                        ForEach(recent) { record in
-                            Button {
-                                onProduct(record.barcode)
-                            } label: {
-                                recentCard(record)
+            // space between the fixed header above and the overlaid footer
+            // below. The list scrolls under the footer and fades into the
+            // background via a gradient scrim, so there is no hard clipping edge.
+            ZStack(alignment: .bottom) {
+                ScrollView {
+                    Group {
+                        if recent.isEmpty {
+                            Text("Scan your first product to get started.")
+                                .font(.body)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(20)
+                                .background(Color.simplyCard,
+                                            in: RoundedRectangle(cornerRadius: 16))
+                                .padding(.top, 8)
+                                .padding(.horizontal, 20)
+                        } else {
+                            VStack(spacing: 10) {
+                                ForEach(recent) { record in
+                                    Button {
+                                        onProduct(record.barcode)
+                                    } label: {
+                                        recentCard(record)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
                             }
-                            .buttonStyle(.plain)
+                            .padding(.top, 8)
+                            .padding(.horizontal, 20)
                         }
                     }
-                    .padding(.top, 8)
-                    .padding(.horizontal, 20)
+                    .padding(.bottom, 72)
                 }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // Fixed footer — always visible without scrolling.
-            Button("Your profile", action: onProfile)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 8)
-                .padding(.bottom, 16)
-                .padding(.horizontal, 20)
+                // Fixed footer — always visible without scrolling. Overlaid on
+                // the list with a transparent-to-background gradient scrim so
+                // items dissolve smoothly as they scroll underneath.
+                Button("Your profile", action: onProfile)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 8)
+                    .padding(.bottom, 16)
+                    .padding(.horizontal, 20)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.simplyPaper.opacity(0), Color.simplyPaper],
+                            startPoint: .top,
+                            endPoint: .bottom)
+                    )
+            }
         }
         .simplyScreenBackground()
         .navigationTitle("Simply Pure")
