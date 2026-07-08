@@ -209,6 +209,12 @@ struct ProfileView: View {
                 donationCard
                     .padding(.top, 24)
 
+                Button("Suggest a feature", action: suggestFeature)
+                    .font(.caption)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.simplyLink)
+                    .padding(.top, 16)
+
                 HStack(spacing: 16) {
                     Button("Privacy policy") {
                         openInBrowser("https://simplypure.studio86.dev/privacy.html")
@@ -219,8 +225,8 @@ struct ProfileView: View {
                 }
                 .font(.caption)
                 .buttonStyle(.plain)
-                .foregroundStyle(Color.riskNone)
-                .padding(.top, 16)
+                .foregroundStyle(Color.simplyLink)
+                .padding(.top, 8)
 
                 Text("Simply Pure v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")")
                     .font(.caption)
@@ -238,7 +244,7 @@ struct ProfileView: View {
         VStack(alignment: .leading, spacing: 10) {
             Label("Support Simply Pure", systemImage: "heart.fill")
                 .font(.headline)
-                .foregroundStyle(Color.riskNone)
+                .foregroundStyle(Color.simplyLink)
             Text("Simply Pure is independent — no ads, no data selling, no sponsored scores. If it saves you from a bad label, consider chipping in. Every feature stays free either way.")
                 .font(.subheadline)
             Button {
@@ -260,6 +266,14 @@ struct ProfileView: View {
     /// legal pages) open on the website in the external browser.
     private func openInBrowser(_ url: String) {
         guard let url = URL(string: url) else { return }
+        UIApplication.shared.open(url)
+    }
+
+    /// Opens the user's email app with a pre-filled feature-request draft.
+    private func suggestFeature() {
+        let subject = "Simply Pure Feature Request"
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        guard let url = URL(string: "mailto:hello@studio86.dev?subject=\(subject)") else { return }
         UIApplication.shared.open(url)
     }
 }

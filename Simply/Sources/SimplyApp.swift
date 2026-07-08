@@ -40,15 +40,20 @@ struct RootView: View {
         }
     }()
 
+    /// `--open-product <barcode>`: jump straight to a product page
+    /// (used for automated screenshots). Parsed once, statically — RootView.init
+    /// runs on every SimplyApp.body evaluation, so it must never write to
+    /// ProfileStore there: the write publishes objectWillChange, which
+    /// invalidates SimplyApp.body, which re-runs init, forever.
+    private static let deepLinkBarcode: String? = {
+        guard let index = CommandLine.arguments.firstIndex(of: "--open-product"),
+              CommandLine.arguments.indices.contains(index + 1) else { return nil }
+        return CommandLine.arguments[index + 1]
+    }()
+
     init() {
         _ = Self.selftest
-        // `--open-product <barcode>`: jump straight to a product page
-        // (used for automated screenshots)
-        if let index = CommandLine.arguments.firstIndex(of: "--open-product"),
-           CommandLine.arguments.indices.contains(index + 1) {
-            ProfileStore.shared.onboarded = true
-            self._openBarcode = State(initialValue: CommandLine.arguments[index + 1])
-        }
+        _openBarcode = State(initialValue: Self.deepLinkBarcode)
     }
 
     @State private var openBarcode: String?
@@ -69,7 +74,10 @@ struct RootView: View {
 
     @ViewBuilder
     private var content: some View {
-        if !profile.onboarded {
+        // A deep-link launch skips onboarding without persisting anything
+        // during body evaluation; `onboarded` is written after the first
+        // frame, in onAppear below.
+        if !profile.onboarded && openBarcode == nil {
             OnboardingView()
                 .simplyScreenBackground()
         } else {
@@ -81,38 +89,52 @@ struct RootView: View {
                     onProfile: { path.append(Route.profile) },
                     onProduct: { code in path.append(Route.product(code)) }
                 )
+                .simplyToolbarBackground()
                 .onAppear {
                     if let barcode = openBarcode {
+                        if !profile.onboarded { profile.onboarded = true }
                         path.append(Route.product(barcode))
                         openBarcode = nil
                     }
                 }
                 .navigationDestination(for: Route.self) { route in
-                    switch route {
-                    case .scanner:
-                        ScannerView(
-                            onBarcode: { code in path.append(Route.product(code)) },
-                            onSearch: { path.append(Route.search) }
-                        )
-                        .navigationTitle("Scan a product")
-                        .navigationBarTitleDisplayMode(.inline)
-                    case .product(let barcode):
-                        ProductView(barcode: barcode) { code in
-                            path.append(Route.product(code))
-                        }
-                    case .search:
-                        SearchView { code in
-                            path.append(Route.product(code))
-                        }
-                    case .history:
-                        HistoryView { code in
-                            path.append(Route.product(code))
-                        }
-                    case .profile:
-                        ProfileView()
+                    // The scanner keeps the translucent system bar so the
+                    // camera stays visible behind it.
+                    if case .scanner = route {
+                        destination(for: route)
+                    } else {
+                        destination(for: route)
+                            .simplyToolbarBackground()
                     }
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func destination(for route: Route) -> some View {
+        switch route {
+        case .scanner:
+            ScannerView(
+                onBarcode: { code in path.append(Route.product(code)) },
+                onSearch: { path.append(Route.search) }
+            )
+            .navigationTitle("Scan a product")
+            .navigationBarTitleDisplayMode(.inline)
+        case .product(let barcode):
+            ProductView(barcode: barcode) { code in
+                path.append(Route.product(code))
+            }
+        case .search:
+            SearchView { code in
+                path.append(Route.product(code))
+            }
+        case .history:
+            HistoryView { code in
+                path.append(Route.product(code))
+            }
+        case .profile:
+            ProfileView()
         }
     }
 }

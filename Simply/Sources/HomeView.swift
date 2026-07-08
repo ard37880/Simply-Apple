@@ -15,7 +15,8 @@ struct HomeView: View {
     private var recent: [ScanRecord] { Array(history.records.prefix(5)) }
 
     var body: some View {
-        ScrollView {
+        // Fixed header + footer; only the recent-scans list scrolls.
+        VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
                 let name = profile.name.trimmingCharacters(in: .whitespaces)
                 Text(name.isEmpty ? "Welcome" : "Hi \(name)")
@@ -60,7 +61,12 @@ struct HomeView: View {
                     }
                 }
                 .padding(.top, 28)
+            }
+            .padding(.horizontal, 20)
 
+            // The only scrollable region: the recent-scans list fills the
+            // space between the fixed header above and the fixed footer below.
+            ScrollView {
                 if recent.isEmpty {
                     Text("Scan your first product to get started.")
                         .font(.body)
@@ -70,6 +76,7 @@ struct HomeView: View {
                         .background(Color.simplyCard,
                                     in: RoundedRectangle(cornerRadius: 16))
                         .padding(.top, 8)
+                        .padding(.horizontal, 20)
                 } else {
                     VStack(spacing: 10) {
                         ForEach(recent) { record in
@@ -82,15 +89,18 @@ struct HomeView: View {
                         }
                     }
                     .padding(.top, 8)
+                    .padding(.horizontal, 20)
                 }
-
-                Button("Your profile", action: onProfile)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 24)
-                    .padding(.bottom, 16)
             }
-            .padding(.horizontal, 20)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            // Fixed footer — always visible without scrolling.
+            Button("Your profile", action: onProfile)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 8)
+                .padding(.bottom, 16)
+                .padding(.horizontal, 20)
         }
         .simplyScreenBackground()
         .navigationTitle("Simply Pure")

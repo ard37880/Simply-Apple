@@ -24,6 +24,14 @@ extension Color {
             : UIColor(red: 0xFF / 255, green: 0xFD / 255, blue: 0xF6 / 255, alpha: 1)
     })
 
+    /// Text-link green: dark enough for AA contrast on khaki paper in
+    /// light mode (matches Android's primary), lighter in dark mode.
+    static let simplyLink = Color(UIColor { trait in
+        trait.userInterfaceStyle == .dark
+            ? UIColor(red: 0x1B/255, green: 0x8E/255, blue: 0x3E/255, alpha: 1)
+            : UIColor(red: 0x1B/255, green: 0x5E/255, blue: 0x20/255, alpha: 1)
+    })
+
     /// Hairline / divider tone for the khaki theme.
     static let simplyHairline = Color(UIColor { trait in
         trait.userInterfaceStyle == .dark
@@ -35,15 +43,15 @@ extension Color {
 // MARK: - Appearance setting
 
 /// App appearance choice, persisted via ProfileStore (@AppStorage).
-/// Feature-identical with the Android "Khaki / Dark / System" control.
+/// Feature-identical with the Android "Light / Dark / System" control.
 enum Appearance: String, CaseIterable, Identifiable {
-    case khaki, dark, system
+    case light, dark, system
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
-        case .khaki: return "Khaki"
+        case .light: return "Light"
         case .dark: return "Dark"
         case .system: return "System"
         }
@@ -52,18 +60,29 @@ enum Appearance: String, CaseIterable, Identifiable {
     /// The color scheme to force. `nil` follows the system setting.
     var colorScheme: ColorScheme? {
         switch self {
-        case .khaki: return .light
+        case .light: return .light
         case .dark: return .dark
         case .system: return nil
         }
     }
 
-    static func from(_ raw: String) -> Appearance { Appearance(rawValue: raw) ?? .khaki }
+    /// Older releases stored the light theme as "khaki"; treat the legacy
+    /// value (and anything unknown) as light so saved preferences keep working.
+    static func from(_ raw: String) -> Appearance { Appearance(rawValue: raw) ?? .light }
 }
 
 extension View {
     /// Paper page background for a top-level screen in the khaki theme.
     func simplyScreenBackground() -> some View {
         background(Color.simplyPaper.ignoresSafeArea())
+    }
+
+    /// Navigation bars sit directly on the paper background; the system bar
+    /// material would otherwise render a slightly different shade in light
+    /// mode. `simplyPaper` is adaptive, so dark mode is unaffected.
+    func simplyToolbarBackground() -> some View {
+        self
+            .toolbarBackground(Color.simplyPaper, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
     }
 }
