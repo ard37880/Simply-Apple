@@ -76,7 +76,7 @@ struct ProductView: View {
                     Button("Scan again") { dismiss() }
                 }
                 .padding(24)
-                .background(Color(.secondarySystemBackground),
+                .background(Color.simplyCard,
                             in: RoundedRectangle(cornerRadius: 12))
                 .padding()
             case .error(let message):
@@ -101,6 +101,7 @@ struct ProductView: View {
                 detail(product, score)
             }
         }
+        .simplyScreenBackground()
         .navigationTitle("Product")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showSubmit) { SubmitView(barcode: barcode, kind: currentKind) }
@@ -470,7 +471,7 @@ struct AlternativeCard: View {
             }
             .frame(width: 140)
             .padding(10)
-            .background(Color(.secondarySystemBackground),
+            .background(Color.simplyCard,
                         in: RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
@@ -508,7 +509,7 @@ struct ScoreRing: View {
                     .font(.caption2)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 2)
-                    .background(Color(.secondarySystemBackground), in: Capsule())
+                    .background(Color.simplyCard, in: Capsule())
                 if showStandard, let standard = score.total {
                     Text("Standard score: \(standard)")
                         .font(.caption2)

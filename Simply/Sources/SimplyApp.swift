@@ -54,6 +54,7 @@ struct RootView: View {
     @State private var openBarcode: String?
 
     enum Route: Hashable {
+        case scanner
         case product(String)
         case search
         case history
@@ -61,28 +62,25 @@ struct RootView: View {
     }
 
     var body: some View {
+        content
+            .tint(.riskNone)
+            .preferredColorScheme(Appearance.from(profile.appearance).colorScheme)
+    }
+
+    @ViewBuilder
+    private var content: some View {
         if !profile.onboarded {
             OnboardingView()
+                .simplyScreenBackground()
         } else {
             NavigationStack(path: $path) {
-                ScannerView(
-                    onBarcode: { code in path.append(Route.product(code)) },
-                    onSearch: { path.append(Route.search) }
+                HomeView(
+                    onScan: { path.append(Route.scanner) },
+                    onSearch: { path.append(Route.search) },
+                    onHistory: { path.append(Route.history) },
+                    onProfile: { path.append(Route.profile) },
+                    onProduct: { code in path.append(Route.product(code)) }
                 )
-                .navigationTitle("Simply Pure")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button { path.append(Route.history) } label: {
-                            Image(systemName: "clock.arrow.circlepath")
-                        }
-                    }
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button { path.append(Route.profile) } label: {
-                            Image(systemName: "person.circle")
-                        }
-                    }
-                }
                 .onAppear {
                     if let barcode = openBarcode {
                         path.append(Route.product(barcode))
@@ -91,6 +89,13 @@ struct RootView: View {
                 }
                 .navigationDestination(for: Route.self) { route in
                     switch route {
+                    case .scanner:
+                        ScannerView(
+                            onBarcode: { code in path.append(Route.product(code)) },
+                            onSearch: { path.append(Route.search) }
+                        )
+                        .navigationTitle("Scan a product")
+                        .navigationBarTitleDisplayMode(.inline)
                     case .product(let barcode):
                         ProductView(barcode: barcode) { code in
                             path.append(Route.product(code))

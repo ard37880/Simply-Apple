@@ -40,10 +40,13 @@ struct SearchView: View {
                         row(item)
                     }
                     .buttonStyle(.plain)
+                    .listRowBackground(Color.simplyPaper)
                 }
                 .listStyle(.plain)
+                .scrollContentBackground(.hidden)
             }
         }
+        .simplyScreenBackground()
         .navigationTitle("Search")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query,

@@ -62,7 +62,7 @@ struct PreferenceEditor: View {
                         .background(
                             selected.contains(key)
                                 ? Color.riskNone.opacity(0.18)
-                                : Color(.secondarySystemBackground),
+                                : Color.simplyCard,
                             in: Capsule())
                         .overlay(Capsule().stroke(
                             selected.contains(key) ? Color.riskNone : .clear, lineWidth: 1.5))
@@ -157,6 +157,22 @@ struct ProfileView: View {
 
                 PreferenceEditor(collapsible: true)
 
+                Text("Appearance")
+                    .font(.headline)
+                    .padding(.top, 24)
+                Picker("Appearance", selection: Binding(
+                    get: { Appearance.from(profile.appearance) },
+                    set: { newValue in
+                        profile.objectWillChange.send()
+                        profile.appearance = newValue.rawValue
+                    }
+                )) {
+                    ForEach(Appearance.allCases) { option in
+                        Text(option.label).tag(option)
+                    }
+                }
+                .pickerStyle(.segmented)
+
                 Text("Alerts & location")
                     .font(.headline)
                     .padding(.top, 24)
@@ -213,6 +229,7 @@ struct ProfileView: View {
             }
             .padding()
         }
+        .simplyScreenBackground()
         .navigationTitle(profile.name.isEmpty ? "Your profile" : profile.name)
         .navigationBarTitleDisplayMode(.inline)
     }

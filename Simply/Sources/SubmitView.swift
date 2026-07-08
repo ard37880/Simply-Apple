@@ -323,6 +323,7 @@ struct SubmitView: View {
                 }
                 .padding()
             }
+            .simplyScreenBackground()
             .navigationTitle("Improve this product")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -512,7 +513,7 @@ struct SubmitView: View {
             }
         }
         .padding(12)
-        .background(Color(.secondarySystemBackground),
+        .background(Color.simplyCard,
                     in: RoundedRectangle(cornerRadius: 12))
     }
 

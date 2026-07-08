@@ -23,6 +23,7 @@ struct HistoryView: View {
                             row(record)
                         }
                         .buttonStyle(.plain)
+                        .listRowBackground(Color.simplyPaper)
                     }
                     .onDelete { offsets in
                         for offset in offsets {
@@ -31,8 +32,10 @@ struct HistoryView: View {
                     }
                 }
                 .listStyle(.plain)
+                .scrollContentBackground(.hidden)
             }
         }
+        .simplyScreenBackground()
         .navigationTitle("Scan history")
         .toolbar {
             if !history.records.isEmpty {
