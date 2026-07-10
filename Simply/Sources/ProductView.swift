@@ -104,7 +104,9 @@ struct ProductView: View {
         .simplyScreenBackground()
         .navigationTitle("Product")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showSubmit) { SubmitView(barcode: barcode, kind: currentKind) }
+        .sheet(isPresented: $showSubmit) {
+            SubmitView(barcode: barcode, kind: currentKind, unknownKind: isUnknown)
+        }
         .task {
             // With the location toggle on, order the "Available at" chains
             // by the user's cached state and drop chains that don't operate
@@ -126,6 +128,12 @@ struct ProductView: View {
     private var currentKind: ProductKind {
         if case .loaded(let product, _) = state { return product.kind }
         return .food
+    }
+
+    /// Not in any database yet — the submit form asks what kind it is.
+    private var isUnknown: Bool {
+        if case .notFound = state { return true }
+        return false
     }
 
     private func load() async {

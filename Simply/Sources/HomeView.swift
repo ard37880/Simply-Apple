@@ -14,6 +14,11 @@ struct HomeView: View {
 
     private var recent: [ScanRecord] { Array(history.records.prefix(5)) }
 
+    // A fresh greeting each visit keeps the screen from going stale.
+    @State private var greeting = [
+        "Hi", "Hello", "Hey", "What's up", "Welcome back", "Good to see you",
+    ].randomElement()!
+
     var body: some View {
         // Fixed header; only the recent-scans list scrolls. Profile lives
         // as an avatar button beside the greeting — nothing overlays the
@@ -23,7 +28,7 @@ struct HomeView: View {
                 let name = profile.name.trimmingCharacters(in: .whitespaces)
                 HStack(alignment: .center, spacing: 12) {
                     VStack(alignment: .leading, spacing: 0) {
-                        Text(name.isEmpty ? "Welcome" : "Hi \(name)")
+                        Text(name.isEmpty ? "Welcome" : "\(greeting), \(name)")
                             .font(.largeTitle.bold())
                         Text("What are you checking today?")
                             .font(.body)

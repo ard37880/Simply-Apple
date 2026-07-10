@@ -135,6 +135,9 @@ struct OnboardingView: View {
                     .padding(.top, 40)
                 Text("Set up your profile so scans can flag what matters to you. Everything stays on this phone — no account, no cloud, nothing shared.")
                     .font(.body)
+                Text("Thank you for joining the beta! Please send any and all feedback to hello@studio86.dev.")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Color.riskNone)
 
                 PreferenceEditor()
 
@@ -240,7 +243,7 @@ struct ProfileView: View {
                 .foregroundStyle(Color.simplyLink)
                 .padding(.top, 8)
 
-                Text("Simply Pure v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")")
+                Text("Simply Pure v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0") (Beta)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.top, 8)

@@ -234,6 +234,9 @@ func recognizeText(in image: UIImage) async -> String {
 struct SubmitView: View {
     let barcode: String
     var kind: ProductKind = .food
+    // A product in no database yet has no kind — the submitter says what
+    // it is, which drives the form AND preselects the reviewer's category.
+    var unknownKind = false
     @Environment(\.dismiss) private var dismiss
 
     private static let slots: [(String, String)] = [
@@ -242,10 +245,13 @@ struct SubmitView: View {
         ("nutrition", "Nutrition facts label"),
     ]
 
+    @State private var chosenKind: ProductKind = .food
+    private var effectiveKind: ProductKind { unknownKind ? chosenKind : kind }
+
     // Nutrition facts only apply to food; other kinds skip the section
     // and the nutrition-label photo slot.
     private var slots: [(String, String)] {
-        kind == .food ? Self.slots : Self.slots.filter { $0.0 != "nutrition" }
+        effectiveKind == .food ? Self.slots : Self.slots.filter { $0.0 != "nutrition" }
     }
 
     @State private var captured: [String: UIImage] = [:]
@@ -254,6 +260,10 @@ struct SubmitView: View {
     @State private var ocrRan = false
     @State private var store = ""
     @State private var productName = ""
+    @State private var brandName = ""
+    @State private var liveCapture = false
+    @State private var storeAsk = false
+    @State private var storeAsked = false
     @State private var nutrition: [String: String] = [:]
     @State private var nutritionOcrRan = false
     @State private var nutritionOcrFound = false
@@ -268,6 +278,7 @@ struct SubmitView: View {
             || !ocrText.trimmingCharacters(in: .whitespaces).isEmpty
             || !store.trimmingCharacters(in: .whitespaces).isEmpty
             || !productName.trimmingCharacters(in: .whitespaces).isEmpty
+            || !brandName.trimmingCharacters(in: .whitespaces).isEmpty
             || nutrition.values.contains {
                 !$0.trimmingCharacters(in: .whitespaces).isEmpty
             }
@@ -292,9 +303,62 @@ struct SubmitView: View {
                                 ? Color.riskNone : Color.riskHigh)
                     }
 
+                    if unknownKind {
+                        Text("What kind of product is this?")
+                            .font(.subheadline.weight(.bold))
+                        FlowLayout(spacing: 8) {
+                            ForEach([
+                                (ProductKind.food, "Food"),
+                                (ProductKind.cosmetic, "Cosmetics"),
+                                (ProductKind.petFood, "Pet food"),
+                                (ProductKind.household, "Household"),
+                            ], id: \.1) { k, label in
+                                Button {
+                                    chosenKind = k
+                                    if k != .food {
+                                        // Nutrition facts don't apply — drop
+                                        // anything the food form collected.
+                                        captured.removeValue(forKey: "nutrition")
+                                        nutrition = [:]
+                                        extraVisible = []
+                                        others = []
+                                        nutritionOcrRan = false
+                                        nutritionOcrFound = false
+                                    }
+                                } label: {
+                                    Text(label)
+                                        .font(.subheadline)
+                                        .padding(.horizontal, 12).padding(.vertical, 6)
+                                        .background(
+                                            chosenKind == k
+                                                ? Color.riskNone.opacity(0.18)
+                                                : Color.simplyCard,
+                                            in: Capsule())
+                                        .overlay(Capsule().stroke(
+                                            chosenKind == k ? Color.riskNone : .clear,
+                                            lineWidth: 1.5))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+
                     ForEach(slots, id: \.0) { field, label in
                         slotCard(field: field, label: label)
                     }
+
+                    Button {
+                        liveCapture = true
+                    } label: {
+                        Text(ocrText.isEmpty
+                            ? "Scan the ingredient list live"
+                            : "Re-scan ingredients (live)")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    Text("Photo scan not reading right? Live scan shows what the camera reads as you aim — grab it the moment it looks correct.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
 
                     if ocrRan {
                         Text(ocrText.isEmpty
@@ -311,7 +375,7 @@ struct SubmitView: View {
                     // The nutrition form only appears once a nutrition-label
                     // photo was taken and scanned — the same gate as the
                     // ingredient editor.
-                    if kind == .food, nutritionOcrRan {
+                    if effectiveKind == .food, nutritionOcrRan {
                         nutritionSection
                     }
 
@@ -321,6 +385,14 @@ struct SubmitView: View {
                         TextField("As printed on the package", text: $productName)
                             .textFieldStyle(.roundedBorder)
                             .onChange(of: productName) { _ in resultMessage = nil }
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Brand / manufacturer (optional)")
+                            .font(.subheadline)
+                        TextField("e.g. Kirkland Signature", text: $brandName)
+                            .textFieldStyle(.roundedBorder)
+                            .onChange(of: brandName) { _ in resultMessage = nil }
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
@@ -342,10 +414,32 @@ struct SubmitView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     // The single save point — uploads photos + verified text
-                    Button(saving ? "Saving…" : "Save") { saveAll() }
+                    Button(saving ? "Saving…" : "Save") { requestSave() }
                         .bold()
                         .disabled(!hasWork || saving)
                 }
+            }
+            .sheet(isPresented: $liveCapture) {
+                LiveTextCapture(title: "Ingredient list") { text in
+                    let extracted = extractIngredients(from: text)
+                    ocrText = extracted.isEmpty
+                        ? text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        : extracted
+                    ocrRan = true
+                    resultMessage = nil
+                }
+            }
+            .alert("Add the store?", isPresented: $storeAsk) {
+                TextField("e.g. Costco, Walmart", text: $store)
+                Button(store.trimmingCharacters(in: .whitespaces).isEmpty
+                    ? "Save without store" : "Save") {
+                    storeAsked = true
+                    saveAll()
+                }
+                Button("Back", role: .cancel) {}
+            } message: {
+                Text("You have location tagging on — naming the store where "
+                    + "you found this helps people in your area.")
             }
             .sheet(item: $pickingField) { field in
                 CameraPicker { image in
@@ -527,6 +621,19 @@ struct SubmitView: View {
                     in: RoundedRectangle(cornerRadius: 12))
     }
 
+    // One save entry point: when the user opted into location tagging but
+    // didn't name a store, offer to add one first (their area only attaches
+    // to store reports).
+    private func requestSave() {
+        if ProfileStore.shared.locationTagging,
+           store.trimmingCharacters(in: .whitespaces).isEmpty,
+           !storeAsked {
+            storeAsk = true
+        } else {
+            saveAll()
+        }
+    }
+
     private func saveAll() {
         saving = true
         resultMessage = nil
@@ -541,6 +648,15 @@ struct SubmitView: View {
             let ingredients = ocrText.trimmingCharacters(in: .whitespaces)
             let storeName = store.trimmingCharacters(in: .whitespaces)
             let productNameText = productName.trimmingCharacters(in: .whitespaces)
+            let brandText = brandName.trimmingCharacters(in: .whitespaces)
+            let suggestedCategory: String? = unknownKind ? {
+                switch chosenKind {
+                case .food: return "Food"
+                case .cosmetic: return "Cosmetics"
+                case .petFood: return "Pet food"
+                case .household: return "Household"
+                }
+            }() : nil
             // Nutrition values are entered per serving; convert to per 100 g
             // using the serving grams. Without serving grams they can't be
             // converted, so they're skipped and the message says so.
@@ -585,7 +701,9 @@ struct SubmitView: View {
             }
             var factsOk: Bool?
             if !ingredients.isEmpty || !storeName.isEmpty || servingG != nil
-                || !otherText.isEmpty || !productNameText.isEmpty {
+                || !otherText.isEmpty || !productNameText.isEmpty
+                || !brandText.isEmpty
+                || (suggestedCategory != nil && okPhotos > 0) {
                 // Coarse "City, State" tag, only when a store is being
                 // reported and the user opted in.
                 let region = (!storeName.isEmpty && ProfileStore.shared.locationTagging)
@@ -600,7 +718,9 @@ struct SubmitView: View {
                     nutritionOther: otherText.isEmpty ? nil : otherText,
                     servingSize: servingSizeText,
                     servingQuantity: servingG,
-                    productName: productNameText.isEmpty ? nil : productNameText)
+                    productName: productNameText.isEmpty ? nil : productNameText,
+                    brands: brandText.isEmpty ? nil : brandText,
+                    suggestedCategory: suggestedCategory)
             }
             saving = false
             if !captured.isEmpty, okPhotos < captured.count {
@@ -616,6 +736,7 @@ struct SubmitView: View {
                 if okPhotos > 0 { parts.append("\(okPhotos) photo\(okPhotos == 1 ? "" : "s")") }
                 if factsOk == true {
                     if !productNameText.isEmpty { parts.append("the product name") }
+                    if !brandText.isEmpty { parts.append("the brand") }
                     if !ingredients.isEmpty { parts.append("the ingredient list") }
                     if nutriments != nil || !otherText.isEmpty { parts.append("the nutrition facts") }
                     else if servingG != nil { parts.append("the serving size") }
