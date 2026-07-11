@@ -585,6 +585,9 @@ final class HistoryStore: ObservableObject {
         }
     }
 
+    // History stores the score exactly as the product page shows it
+    // (personalized when preferences apply) — two different numbers for
+    // the same product read as a bug. Each reopen refreshes the record.
     func record(product: Product, score: ScoreResult) {
         DispatchQueue.main.async {
             self.records.removeAll { $0.barcode == product.barcode }
@@ -593,8 +596,8 @@ final class HistoryStore: ObservableObject {
                 name: product.name,
                 brand: product.brand,
                 imageUrl: product.imageUrl?.absoluteString,
-                score: score.total ?? -1,
-                band: score.band?.rawValue ?? "UNKNOWN",
+                score: score.displayTotal ?? -1,
+                band: score.displayBand?.rawValue ?? "UNKNOWN",
                 hasEuBanned: !score.euBanned.isEmpty,
                 scannedAt: Date()
             ), at: 0)
