@@ -484,10 +484,19 @@ struct SubmitView: View {
         }
     }
 
+    // Fields the score engine reads: with all of these present the product
+    // gets a full nutrition rating instead of a partial one. Marked with *
+    // in the form — encouraged, never required.
+    private static let scoredNutrientKeys: Set<String> =
+        ["serving", "calories", "satfat", "sugars", "sodium", "fiber", "protein"]
+
     @ViewBuilder private var nutritionSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Nutrition facts (per serving)")
                 .font(.subheadline.weight(.semibold))
+            Text("* used to calculate the score — filling these in gives the product a full rating instead of a partial one.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
             Text(nutritionOcrFound
                 ? "Here's what the scan read from the label. Please check it against the package and fix any mistakes, then tap Save:"
                 : "Couldn't read values from the nutrition photo — you can enter them manually.")
@@ -548,7 +557,8 @@ struct SubmitView: View {
 
     private func nutritionField(_ field: NutrientField) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("\(field.label) (\(field.unit.rawValue))")
+            Text("\(field.label) (\(field.unit.rawValue))"
+                + (Self.scoredNutrientKeys.contains(field.key) ? " *" : ""))
                 .font(.caption)
                 .foregroundStyle(.secondary)
             TextField("", text: Binding(

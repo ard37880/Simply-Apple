@@ -126,8 +126,39 @@ struct FlowLayout: Layout {
 
 struct OnboardingView: View {
     @EnvironmentObject var profile: ProfileStore
+    // Beta-build welcome, shown once before the profile setup on first
+    // launch. Remove when the app leaves beta.
+    @State private var betaWelcomeSeen = false
 
     var body: some View {
+        if !betaWelcomeSeen {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("You're in the beta 🎉")
+                        .font(.largeTitle.bold())
+                        .padding(.top, 64)
+                    Text("Thank you for joining the Simply Pure beta! You're helping shape the app before it goes public.")
+                        .font(.body)
+                    Text("Please send any and all feedback — bugs, ideas, confusing screens, anything — to hello@studio86.dev.")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(Color.riskNone)
+                    Button {
+                        betaWelcomeSeen = true
+                    } label: {
+                        Text("Let's set things up")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .padding(.top, 24)
+                }
+                .padding(24)
+            }
+        } else {
+            onboardingForm
+        }
+    }
+
+    private var onboardingForm: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Welcome to Simply Pure")
@@ -135,9 +166,6 @@ struct OnboardingView: View {
                     .padding(.top, 40)
                 Text("Set up your profile so scans can flag what matters to you. Everything stays on this phone — no account, no cloud, nothing shared.")
                     .font(.body)
-                Text("Thank you for joining the beta! Please send any and all feedback to hello@studio86.dev.")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(Color.riskNone)
 
                 PreferenceEditor()
 

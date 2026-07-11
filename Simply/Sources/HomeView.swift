@@ -15,9 +15,32 @@ struct HomeView: View {
     private var recent: [ScanRecord] { Array(history.records.prefix(5)) }
 
     // A fresh greeting each visit keeps the screen from going stale.
-    @State private var greeting = [
-        "Hi", "Hello", "Hey", "What's up", "Welcome back", "Good to see you",
-    ].randomElement()!
+    // Advanced in onAppear, not the @State initializer — SwiftUI re-runs
+    // initializers on every parent render, which would skip greetings.
+    @State private var greeting = "Hi"
+
+    private static let greetings = [
+        "Hi", "Hello", "Hey", "What's up", "Sup", "Yo", "Welcome back",
+        "Good to see you", "Hola", "Bonjour", "Ciao", "Hallo", "Olá",
+        "Konnichiwa", "Annyeong", "Namaste", "Aloha", "Hej",
+    ]
+
+    /// Walks a shuffled order of greetings, persisted so every visit shows
+    /// the next one; when the deck runs out it reshuffles and keeps going.
+    private static func nextGreeting() -> String {
+        let defaults = UserDefaults.standard
+        var order = (defaults.array(forKey: "greeting.order") as? [Int] ?? [])
+            .filter { greetings.indices.contains($0) }
+        var index = defaults.integer(forKey: "greeting.index")
+        if order.count != greetings.count || index >= order.count {
+            order = Array(greetings.indices).shuffled()
+            index = 0
+        }
+        let greeting = greetings[order[index]]
+        defaults.set(order, forKey: "greeting.order")
+        defaults.set(index + 1, forKey: "greeting.index")
+        return greeting
+    }
 
     var body: some View {
         // Fixed header; only the recent-scans list scrolls. Profile lives
@@ -127,6 +150,7 @@ struct HomeView: View {
         .simplyScreenBackground()
         .navigationTitle("Simply Pure")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear { greeting = Self.nextGreeting() }
     }
 
     private func recentCard(_ record: ScanRecord) -> some View {
