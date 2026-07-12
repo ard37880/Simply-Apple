@@ -184,7 +184,7 @@ enum PreferenceChecker {
         }
         if diets.contains("keto"), let sugars = product.nutriments?.sugars, sugars > 5 {
             hits.append(.init(
-                label: "High sugar — not keto-friendly (\(Int(sugars)) g/100 g)",
+                label: "High sugar, not keto-friendly (\(Int(sugars)) g/100 g)",
                 severity: .contains))
         }
         if diets.contains("paleo") {
@@ -207,7 +207,7 @@ enum PreferenceChecker {
         if diets.contains("anti_inflammatory") {
             if let sugars = product.nutriments?.sugars, sugars > 13.5 {
                 hits.append(.init(
-                    label: "High sugar — not anti-inflammatory friendly (\(Int(sugars)) g/100 g)",
+                    label: "High sugar, not anti-inflammatory friendly (\(Int(sugars)) g/100 g)",
                     severity: .contains))
             }
             if text.contains("hydrogenated") {

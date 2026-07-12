@@ -26,6 +26,7 @@ struct ScoreResult {
     let euBanned: [Additive]
     let euRestricted: [Additive]
     let cappedByBanned: Bool
+    var cappedByHighRisk: Bool = false
     let kind: ProductKind
     /// Diet-reweighted total; nil when the profile has no reweighting diets.
     var personalized: Int? = nil
@@ -259,11 +260,17 @@ enum ScoreEngine {
             : Int((Double(earned) * 100.0 / Double(availableMax)).rounded())
 
         var cappedByBanned = false
+        var cappedByHighRisk = false
         if var t = total {
-            if worstRisk == .high { t = min(t, highRiskCap) }
+            if worstRisk == .high {
+                cappedByHighRisk = t > highRiskCap
+                t = min(t, highRiskCap)
+            }
             if !banned.isEmpty {
                 cappedByBanned = t > bannedCap
                 t = min(t, bannedCap)
+                // The banned cap is the one that actually bit.
+                if cappedByBanned { cappedByHighRisk = false }
             }
             total = min(max(t, 0), 100)
         }
@@ -300,6 +307,7 @@ enum ScoreEngine {
             euBanned: banned,
             euRestricted: restricted,
             cappedByBanned: cappedByBanned,
+            cappedByHighRisk: cappedByHighRisk,
             kind: .food,
             personalized: personalized,
             processingKnown: processingKnown,

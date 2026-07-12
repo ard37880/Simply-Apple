@@ -28,7 +28,7 @@ struct SearchView: View {
                 ProgressView()
             case .empty:
                 placeholder(icon: "questionmark.circle",
-                            text: "No matches — try the barcode.")
+                            text: "No matches. Try the barcode.")
             case .error:
                 placeholder(icon: "wifi.exclamationmark",
                             text: "Couldn't search. Check your connection and try again.")

@@ -134,12 +134,12 @@ struct OnboardingView: View {
         if !betaWelcomeSeen {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("You're in the beta 🎉")
+                    Text("You're in the beta!")
                         .font(.largeTitle.bold())
                         .padding(.top, 64)
                     Text("Thank you for joining the Simply Pure beta! You're helping shape the app before it goes public.")
                         .font(.body)
-                    Text("Please send any and all feedback — bugs, ideas, confusing screens, anything — to hello@studio86.dev.")
+                    Text("Please send any and all feedback (bugs, ideas, confusing screens, anything) to hello@studio86.dev.")
                         .font(.body.weight(.medium))
                         .foregroundStyle(Color.riskNone)
                     Button {
@@ -164,7 +164,7 @@ struct OnboardingView: View {
                 Text("Welcome to Simply Pure")
                     .font(.largeTitle.bold())
                     .padding(.top, 40)
-                Text("Set up your profile so scans can flag what matters to you. Everything stays on this phone — no account, no cloud, nothing shared.")
+                Text("Set up your profile so scans can flag what matters to you. Everything stays on this phone: no account, no cloud, nothing shared.")
                     .font(.body)
 
                 PreferenceEditor()
@@ -194,7 +194,7 @@ struct ProfileView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Your profile lives only on this phone — nothing is uploaded.")
+                Text("Your profile lives only on this phone. Nothing is uploaded.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -223,7 +223,7 @@ struct ProfileView: View {
                     title: "Recall alerts",
                     description: "Notifies you if a product you scanned is recalled "
                         + "(US FDA). Your scan list is sent to the Simply Pure server to "
-                        + "check — nothing else.",
+                        + "check, nothing else.",
                     isOn: Binding(
                         get: { profile.recallAlerts },
                         set: { on in
@@ -288,7 +288,7 @@ struct ProfileView: View {
             Label("Support Simply Pure", systemImage: "heart.fill")
                 .font(.headline)
                 .foregroundStyle(Color.simplyLink)
-            Text("Simply Pure is independent — no ads, no data selling, no sponsored scores. If it saves you from a bad label, consider chipping in. Every feature stays free either way.")
+            Text("Simply Pure is independent: no ads, no data selling, no sponsored scores. If it saves you from a bad label, consider chipping in. Every feature stays free either way.")
                 .font(.subheadline)
             Button {
                 openInBrowser("https://simplypure.studio86.dev/donate")

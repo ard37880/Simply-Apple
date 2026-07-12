@@ -64,7 +64,7 @@ struct ProductView: View {
                     Text("Not in any database yet")
                         .font(.headline)
                         .multilineTextAlignment(.center)
-                    Text("Be the first to add it — a photo of the front and the ingredient label takes about 30 seconds, and it goes live for every Simply Pure user once reviewed.")
+                    Text("Be the first to add it: a photo of the front and the ingredient label takes about 30 seconds, and it goes live for every Simply Pure user once reviewed.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -84,7 +84,7 @@ struct ProductView: View {
                     Text("Couldn't reach the database")
                         .font(.headline)
                         .multilineTextAlignment(.center)
-                    Text("Check your connection and try again — this doesn't mean the product isn't listed.")
+                    Text("Check your connection and try again. This doesn't mean the product isn't listed.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -312,7 +312,7 @@ struct ProductView: View {
     private func bannedBanner(_ banned: [Additive]) -> some View {
         bannerCard(color: .riskHigh, icon: "exclamationmark.octagon.fill") {
             Text("Banned in the EU").bold().foregroundStyle(Color.riskHigh)
-            Text("Contains \(banned.map(\.displayName).joined(separator: ", ")) — not permitted in European products but legal in the US.")
+            Text("Contains \(banned.map(\.displayName).joined(separator: ", ")), not permitted in European products but legal in the US.")
                 .font(.subheadline)
         }
     }
@@ -345,7 +345,10 @@ struct ProductView: View {
                              score.processingKnown ? "\(score.processingPoints) / 10" : "no data")
             }
             if score.cappedByBanned {
-                Text("Score capped because an EU-banned ingredient is present.")
+                Text("Score capped at 24: an ingredient banned in the EU is present. No other points can raise it above that.")
+                    .font(.caption).foregroundStyle(Color.riskHigh)
+            } else if score.cappedByHighRisk {
+                Text("Score capped at 49: a high-risk additive is present. No nutrition numbers can raise it above that.")
                     .font(.caption).foregroundStyle(Color.riskHigh)
             }
         }
@@ -366,7 +369,7 @@ struct ProductView: View {
                 : "Additives (\(product.additives.count + product.unratedAdditives.count))")
             if product.additives.isEmpty && product.unratedAdditives.isEmpty {
                 Text(score.additivesKnown
-                    ? "No additives detected — a good sign."
+                    ? "No additives detected, a good sign."
                     : "No ingredient information for this product yet.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -383,7 +386,7 @@ struct ProductView: View {
                 AdditiveRow(additive: additive, doseText: doseText)
             }
             ForEach(product.unratedAdditives) { unrated in
-                Label("\(unrated.eNumber) — not yet rated", systemImage: "circle.fill")
+                Label("\(unrated.eNumber) (not yet rated)", systemImage: "circle.fill")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -451,7 +454,7 @@ struct ProductView: View {
 
     private var disclaimerText: String {
         "Scores summarize cited regulatory assessments of ingredients and " +
-        "nutrition data — they aren't medical advice. Full methodology at " +
+        "nutrition data; they aren't medical advice. Full methodology at " +
         "simplypure.studio86.dev/methodology.html"
     }
 }
@@ -545,14 +548,21 @@ let euStandardExplainer =
     "Simply Pure rates additives against the European Union's food-safety " +
     "system, the strictest widely adopted in the world. The EU reviews " +
     "additives before they reach shelves and withdraws approval when new " +
-    "evidence raises doubt — a precautionary approach. In the US, an " +
+    "evidence raises doubt, a precautionary approach. In the US, an " +
     "additive can stay in food while evidence is re-examined.\n\n" +
     "Titanium dioxide (E171) was withdrawn in the EU in 2022 but remains " +
     "legal in the US. Potassium bromate is not permitted in the EU, " +
     "Canada, or Japan, yet still appears in some US breads.\n\n" +
-    "An EU flag doesn't mean a product is acutely dangerous — dose " +
+    "An EU flag doesn't mean a product is acutely dangerous, because dose " +
     "matters. That's why Simply Pure also estimates, where reliable intake " +
-    "limits exist, how much of an additive one serving contains. " +
+    "limits exist, how much of an additive one serving contains.\n\n" +
+    "Reading the dose line: the daily limit is the acceptable daily " +
+    "intake set by regulators for a 70 kg adult. At 15% of the daily " +
+    "limit per serving, it would take several servings a day, every day, " +
+    "to reach the level regulators still consider safe over a lifetime. " +
+    "When the line says the amount is unknown, no reliable estimate was " +
+    "possible; the color then reflects the additive's risk class alone, " +
+    "and the note on the row explains the specific concern.\n\n" +
     "Sources: EFSA, SCCS, Health Canada, Japan's MHLW."
 
 struct EuStandardExplainer: View {
@@ -931,7 +941,7 @@ struct AdditiveRow: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(additive.eNumber.isEmpty
                             ? additive.displayName
-                            : "\(additive.eNumber) — \(additive.displayName)")
+                            : "\(additive.eNumber): \(additive.displayName)")
                             .font(.subheadline.weight(.medium))
                             .multilineTextAlignment(.leading)
                         HStack(spacing: 6) {

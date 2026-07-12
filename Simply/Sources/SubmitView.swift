@@ -356,13 +356,13 @@ struct SubmitView: View {
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
-                    Text("Photo scan not reading right? Live scan shows what the camera reads as you aim — grab it the moment it looks correct.")
+                    Text("Photo scan not reading right? Live scan shows what the camera reads as you aim. Grab it the moment it looks correct.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
 
                     if ocrRan {
                         Text(ocrText.isEmpty
-                            ? "Couldn't read text from the ingredient photo — you can type the list manually."
+                            ? "Couldn't read text from the ingredient photo. You can type the list manually."
                             : "Here's what the scan read from the label. Please check it against the package and fix any mistakes, then tap Save:")
                             .font(.subheadline)
                         TextEditor(text: $ocrText)
@@ -438,7 +438,7 @@ struct SubmitView: View {
                 }
                 Button("Back", role: .cancel) {}
             } message: {
-                Text("You have location tagging on — naming the store where "
+                Text("You have location tagging on. Naming the store where "
                     + "you found this helps people in your area.")
             }
             .sheet(item: $pickingField) { field in
@@ -494,12 +494,12 @@ struct SubmitView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Nutrition facts (per serving)")
                 .font(.subheadline.weight(.semibold))
-            Text("* used to calculate the score — filling these in gives the product a full rating instead of a partial one.")
+            Text("* used to calculate the score; filling these in gives the product a full rating instead of a partial one.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             Text(nutritionOcrFound
                 ? "Here's what the scan read from the label. Please check it against the package and fix any mistakes, then tap Save:"
-                : "Couldn't read values from the nutrition photo — you can enter them manually.")
+                : "Couldn't read values from the nutrition photo. You can enter them manually.")
                 .font(.subheadline)
             nutritionField(nutrientFields.first { $0.offKey == nil }!)
             ForEach(shownNutrientRows, id: \.first!.key) { row in
@@ -734,13 +734,13 @@ struct SubmitView: View {
             }
             saving = false
             if !captured.isEmpty, okPhotos < captured.count {
-                resultMessage = "Uploaded \(okPhotos) of \(captured.count) photos — check your connection and tap Save again."
+                resultMessage = "Uploaded \(okPhotos) of \(captured.count) photos. Check your connection and tap Save again."
             } else if factsOk == false {
-                resultMessage = "Photos uploaded, but the product details didn't save — tap Save again."
+                resultMessage = "Photos uploaded, but the product details didn't save. Tap Save again."
             } else if okPhotos == 0, factsOk == nil, nutritionSkipped {
-                resultMessage = "Nutrition facts need the serving size in grams — add it and tap Save again."
+                resultMessage = "Nutrition facts need the serving size in grams. Add it and tap Save again."
             } else if okPhotos == 0, factsOk == nil {
-                resultMessage = "Nothing to save yet — take a photo first."
+                resultMessage = "Nothing to save yet. Take a photo first."
             } else {
                 var parts: [String] = []
                 if okPhotos > 0 { parts.append("\(okPhotos) photo\(okPhotos == 1 ? "" : "s")") }
@@ -752,9 +752,9 @@ struct SubmitView: View {
                     else if servingG != nil { parts.append("the serving size") }
                     if !storeName.isEmpty { parts.append("the store") }
                 }
-                resultMessage = "Saved \(parts.joined(separator: " + ")) — thank you! Your submission will appear once it's reviewed."
+                resultMessage = "Saved \(parts.joined(separator: " + ")), thank you! Your submission will appear once it's reviewed."
                     + (nutritionSkipped
-                        ? " Nutrition facts weren't saved — add the serving size in grams and tap Save again."
+                        ? " Nutrition facts weren't saved. Add the serving size in grams and tap Save again."
                         : "")
             }
         }

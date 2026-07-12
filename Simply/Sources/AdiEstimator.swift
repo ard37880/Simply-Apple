@@ -13,7 +13,7 @@ import Foundation
 enum AdiEstimator {
 
     /// Copy shown when an additive is present but no dose could be estimated.
-    static let notEstimated = "present — dose not estimated"
+    static let notEstimated = "amount unknown, rated on its risk level alone"
 
     /// EFSA default adult body weight, kg.
     private static let bodyWeightKg = 70.0

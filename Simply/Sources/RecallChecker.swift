@@ -56,7 +56,7 @@ enum RecallChecker {
             content.title = "Recall: \(name)"
             content.body = recall.reason.isEmpty
                 ? "Recalled by \(recall.firm)"
-                : "\(recall.reason) — \(recall.firm) (FDA \(recall.recallNumber))"
+                : "\(recall.reason). \(recall.firm) (FDA \(recall.recallNumber))"
             content.sound = .default
             try? await center.add(UNNotificationRequest(
                 identifier: "recall-\(recall.recallNumber)-\(recall.barcode)",

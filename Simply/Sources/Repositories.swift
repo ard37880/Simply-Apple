@@ -94,7 +94,7 @@ final class IngredientRiskRepository {
             var regions: [String: String] = [:]
             switch a.euStatus {
             case .banned: regions["EU"] = bannedWording
-            case .restricted: regions["EU"] = "Restricted — concentration/use limits apply"
+            case .restricted: regions["EU"] = "Restricted (concentration/use limits apply)"
             case .approved: regions["EU"] = "Permitted"
             }
             for region in a.notPermittedIn { regions[region] = "Not permitted" }
@@ -179,7 +179,7 @@ enum PetIngredientFlagger {
         ("ethoxyquin", .init(name: "Ethoxyquin", risk: .high,
             note: "Synthetic preservative suspended in EU animal feed since 2017 over genotoxicity data gaps; still appears in US pet food, often via preserved fish meal.")),
         ("xylitol", .init(name: "Xylitol", risk: .high,
-            note: "Sweetener that is severely toxic to dogs — even small amounts can cause hypoglycemia and liver failure.")),
+            note: "Sweetener that is severely toxic to dogs; even small amounts can cause hypoglycemia and liver failure.")),
         ("onion", .init(name: "Onion", risk: .high,
             note: "Onion in any form is toxic to dogs and cats (oxidative damage to red blood cells).")),
         ("garlic", .init(name: "Garlic", risk: .moderate,

@@ -22,7 +22,7 @@ struct LiveTextCapture: View {
                     LiveTextRepresentable(onText: { liveText = $0 })
                 } else {
                     Color.black
-                    Text("Live text isn't available on this device — use the photo scan instead.")
+                    Text("Live text isn't available on this device. Use the photo scan instead.")
                         .foregroundStyle(.white)
                         .multilineTextAlignment(.center)
                         .padding(24)

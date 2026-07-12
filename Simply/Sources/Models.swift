@@ -91,7 +91,7 @@ struct Additive: Identifiable {
         var rows: [(String, String)] = []
         switch euStatus {
         case .banned: rows.append(("EU", "Not permitted in food"))
-        case .restricted: rows.append(("EU", "Restricted — permitted only for specific uses"))
+        case .restricted: rows.append(("EU", "Restricted (permitted only for specific uses)"))
         case .approved: rows.append(("EU", "Permitted"))
         }
         rows.append(("Japan", explicitRegionStatus["Japan"]
@@ -116,7 +116,7 @@ struct Additive: Identifiable {
     var maxLevelDisplay: String {
         if let level = maxPermittedLevel { return level }
         return euStatus == .banned
-            ? "None — not permitted in the EU"
+            ? "None (not permitted in the EU)"
             : "Varies by food category (EU Annex II); often quantum satis"
     }
 
