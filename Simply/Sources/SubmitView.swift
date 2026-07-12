@@ -272,7 +272,6 @@ struct SubmitView: View {
     @State private var store = ""
     @State private var productName = ""
     @State private var brandName = ""
-    @State private var liveCapture = false
     @State private var storeAsk = false
     @State private var storeAsked = false
     @State private var nutrition: [String: String] = [:]
@@ -319,7 +318,7 @@ struct SubmitView: View {
                     Text(unknownKind ? "What kind of product is this?" : "Category")
                         .font(.subheadline.weight(.bold))
                     if !unknownKind {
-                        Text("Wrong category? Pick the right one and save; a reviewer will move it. Non-food products aren't asked for nutrition facts.")
+                        Text("Wrong category? Pick the right one and save; a reviewer will move it. Personal care covers deodorant, toothpaste, mouthwash, skin care, and similar. Non-food products aren't asked for nutrition facts.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -327,7 +326,7 @@ struct SubmitView: View {
                         FlowLayout(spacing: 8) {
                             ForEach([
                                 (ProductKind.food, "Food"),
-                                (ProductKind.cosmetic, "Cosmetics"),
+                                (ProductKind.cosmetic, "Personal care"),
                                 (ProductKind.petFood, "Pet food"),
                                 (ProductKind.household, "Household"),
                             ], id: \.1) { k, label in
@@ -364,19 +363,6 @@ struct SubmitView: View {
                     ForEach(slots, id: \.0) { field, label in
                         slotCard(field: field, label: label)
                     }
-
-                    Button {
-                        liveCapture = true
-                    } label: {
-                        Text(ocrText.isEmpty
-                            ? "Scan the ingredient list live"
-                            : "Re-scan ingredients (live)")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    Text("Photo scan not reading right? Live scan shows what the camera reads as you aim. Grab it the moment it looks correct.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
 
                     if ocrRan {
                         Text(ocrText.isEmpty
@@ -435,16 +421,6 @@ struct SubmitView: View {
                     Button(saving ? "Saving…" : "Save") { requestSave() }
                         .bold()
                         .disabled(!hasWork || saving)
-                }
-            }
-            .sheet(isPresented: $liveCapture) {
-                LiveTextCapture(title: "Ingredient list") { text in
-                    let extracted = extractIngredients(from: text)
-                    ocrText = extracted.isEmpty
-                        ? text.trimmingCharacters(in: .whitespacesAndNewlines)
-                        : extracted
-                    ocrRan = true
-                    resultMessage = nil
                 }
             }
             .alert("Add the store?", isPresented: $storeAsk) {
