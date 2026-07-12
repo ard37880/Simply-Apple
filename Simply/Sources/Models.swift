@@ -42,6 +42,9 @@ struct AdditiveEntry: Decodable {
     /// Acceptable daily intake (EFSA/JECFA), mg per kg body weight per day.
     /// Absent when no ADI is established or when the ADI was withdrawn.
     var adiMgPerKg: Double?
+    /// Documented environmental harm (EU CLP aquatic toxicity, poor
+    /// biodegradability, eutrophication); flags the household Environment card.
+    var envNote: String?
 }
 
 struct Additive: Identifiable {
@@ -59,6 +62,8 @@ struct Additive: Identifiable {
     let explicitRegionStatus: [String: String]
     /// Acceptable daily intake, mg per kg body weight per day, when established.
     let adiMgPerKg: Double?
+    /// Documented environmental harm; shown on the household Environment card.
+    let envNote: String?
 
     var displayName: String {
         usName.map { "\(name) (\($0))" } ?? name
@@ -153,6 +158,7 @@ struct Additive: Identifiable {
         explicitEvidenceSources = entry.evidenceSources ?? []
         explicitRegionStatus = entry.regionStatus ?? [:]
         adiMgPerKg = entry.adiMgPerKg
+        envNote = entry.envNote
     }
 }
 

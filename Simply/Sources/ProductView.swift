@@ -228,6 +228,9 @@ struct ProductView: View {
 
                 breakdown(score)
                 additivesSection(product, score)
+                if score.kind == .household, score.additivesKnown {
+                    environmentSection(product)
+                }
 
                 if let ingredients = product.ingredientsText {
                     sectionHeading("Ingredients")
@@ -364,6 +367,45 @@ struct ProductView: View {
             Text(label).font(.subheadline)
             Spacer()
             Text(value).font(.subheadline.bold())
+        }
+    }
+
+    /// Household products only: whether anything in the ingredient list
+    /// carries a documented environmental concern (EU CLP aquatic-toxicity
+    /// classification, poor biodegradability, eutrophication). Display
+    /// only; the score itself rates human safety.
+    private func environmentSection(_ product: Product) -> some View {
+        let flagged = product.additives.filter { $0.envNote != nil }
+        return VStack(alignment: .leading, spacing: 6) {
+            sectionHeading("Environment")
+            HStack(spacing: 8) {
+                Image(systemName: "leaf.fill")
+                    .foregroundStyle(flagged.isEmpty ? Color.riskNone : Color.riskModerate)
+                Text(flagged.isEmpty
+                    ? "No environmental red flags"
+                    : "\(flagged.count) ingredient\(flagged.count == 1 ? "" : "s") flagged for the environment")
+                    .font(.subheadline.weight(.medium))
+            }
+            if flagged.isEmpty {
+                Text("Nothing in the ingredient list is flagged for aquatic toxicity, poor biodegradability, or waterway damage.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(flagged) { ingredient in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(ingredient.displayName)
+                            .font(.subheadline.weight(.semibold))
+                        Text(ingredient.envNote ?? "")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.top, 4)
+                }
+            }
+            Text("Based on EU CLP aquatic-hazard classifications and the EU Detergent Regulation. Shown for information; the score rates safety for you, not the planet.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.top, 4)
         }
     }
 
