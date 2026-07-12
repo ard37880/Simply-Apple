@@ -228,7 +228,8 @@ struct ProductView: View {
 
                 breakdown(score)
                 additivesSection(product, score)
-                if score.kind == .household, score.additivesKnown {
+                if score.kind == .household || score.kind == .cosmetic,
+                   score.additivesKnown {
                     environmentSection(product)
                 }
 
@@ -402,7 +403,7 @@ struct ProductView: View {
                     .padding(.top, 4)
                 }
             }
-            Text("Based on EU CLP aquatic-hazard classifications and the EU Detergent Regulation. Shown for information; the score rates safety for you, not the planet.")
+            Text("Based on EU environmental-hazard classifications, reef-protection bans, and the EU microplastics and detergent rules. Shown for information; the score rates safety for you, not the planet.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.top, 4)
