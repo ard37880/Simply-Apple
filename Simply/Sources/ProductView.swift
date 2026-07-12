@@ -251,7 +251,12 @@ struct ProductView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.top, 4)
-                    .padding(.bottom, 16)
+                Link(destination: URL(string: "https://simplypure.studio86.dev/methodology.html")!) {
+                    Text("Read the full methodology").underline()
+                }
+                .font(.caption)
+                .padding(.top, 2)
+                .padding(.bottom, 16)
             }
             .padding(.horizontal)
         }
@@ -454,8 +459,7 @@ struct ProductView: View {
 
     private var disclaimerText: String {
         "Scores summarize cited regulatory assessments of ingredients and " +
-        "nutrition data; they aren't medical advice. Full methodology at " +
-        "simplypure.studio86.dev/methodology.html"
+        "nutrition data; they aren't medical advice."
     }
 }
 
@@ -859,8 +863,13 @@ struct GaugeBar: View {
         return width * CGFloat((Double(index) + within) / Double(segments))
     }
 
+    // Gauge scale labels stay whole numbers: per-serving scaling turns tidy
+    // per-100g cutoffs into values like 945.6, which read as noise. Labels
+    // are evenly spaced along the bar, so display rounding shifts nothing.
     private func format(_ value: Double) -> String {
-        value == value.rounded() ? String(Int(value)) : String(format: "%.1f", value)
+        value >= 100
+            ? String(Int((value / 10).rounded()) * 10)
+            : String(Int(value.rounded()))
     }
 }
 

@@ -239,6 +239,15 @@ struct SubmitView: View {
     var unknownKind = false
     @Environment(\.dismiss) private var dismiss
 
+    init(barcode: String, kind: ProductKind = .food, unknownKind: Bool = false) {
+        self.barcode = barcode
+        self.kind = kind
+        self.unknownKind = unknownKind
+        // The picker starts on the product's current category so a
+        // mis-filed item (mouthwash stored as food) can be corrected.
+        _chosenKind = State(initialValue: kind)
+    }
+
     private static let slots: [(String, String)] = [
         ("front", "Front of package"),
         ("ingredients", "Ingredient list"),
@@ -246,7 +255,9 @@ struct SubmitView: View {
     ]
 
     @State private var chosenKind: ProductKind = .food
-    private var effectiveKind: ProductKind { unknownKind ? chosenKind : kind }
+    // The picker drives the form for unknown AND known products, so
+    // recategorizing immediately stops asking for nutrition facts.
+    private var effectiveKind: ProductKind { chosenKind }
 
     // Nutrition facts only apply to food; other kinds skip the section
     // and the nutrition-label photo slot.
@@ -303,9 +314,14 @@ struct SubmitView: View {
                                 ? Color.riskNone : Color.riskHigh)
                     }
 
-                    if unknownKind {
-                        Text("What kind of product is this?")
-                            .font(.subheadline.weight(.bold))
+                    Text(unknownKind ? "What kind of product is this?" : "Category")
+                        .font(.subheadline.weight(.bold))
+                    if !unknownKind {
+                        Text("Wrong category? Pick the right one and save; a reviewer will move it. Non-food products aren't asked for nutrition facts.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Group {
                         FlowLayout(spacing: 8) {
                             ForEach([
                                 (ProductKind.food, "Food"),
@@ -659,7 +675,9 @@ struct SubmitView: View {
             let storeName = store.trimmingCharacters(in: .whitespaces)
             let productNameText = productName.trimmingCharacters(in: .whitespaces)
             let brandText = brandName.trimmingCharacters(in: .whitespaces)
-            let suggestedCategory: String? = unknownKind ? {
+            // Sent for brand-new products, and for existing ones as a
+            // correction whenever the picker differs from the current kind.
+            let suggestedCategory: String? = (unknownKind || chosenKind != kind) ? {
                 switch chosenKind {
                 case .food: return "Food"
                 case .cosmetic: return "Cosmetics"
@@ -710,10 +728,13 @@ struct SubmitView: View {
                 $0 == $0.rounded(.down) ? "\(Int($0)) g" : "\($0) g"
             }
             var factsOk: Bool?
+            // A category correction on an existing product stands on its
+            // own; brand-new products still need at least one photo so the
+            // reviewer has something to verify against.
             if !ingredients.isEmpty || !storeName.isEmpty || servingG != nil
                 || !otherText.isEmpty || !productNameText.isEmpty
                 || !brandText.isEmpty
-                || (suggestedCategory != nil && okPhotos > 0) {
+                || (suggestedCategory != nil && (okPhotos > 0 || !unknownKind)) {
                 // Coarse "City, State" tag, only when a store is being
                 // reported and the user opted in.
                 let region = (!storeName.isEmpty && ProfileStore.shared.locationTagging)
@@ -751,6 +772,7 @@ struct SubmitView: View {
                     if nutriments != nil || !otherText.isEmpty { parts.append("the nutrition facts") }
                     else if servingG != nil { parts.append("the serving size") }
                     if !storeName.isEmpty { parts.append("the store") }
+                    if suggestedCategory != nil { parts.append("the category") }
                 }
                 resultMessage = "Saved \(parts.joined(separator: " + ")), thank you! Your submission will appear once it's reviewed."
                     + (nutritionSkipped
