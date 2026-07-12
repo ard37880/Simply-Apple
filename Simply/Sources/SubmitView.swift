@@ -297,6 +297,8 @@ struct SubmitView: View {
                 !$0.name.trimmingCharacters(in: .whitespaces).isEmpty
                     || !$0.amount.trimmingCharacters(in: .whitespaces).isEmpty
             }
+            // A category correction is savable work on its own.
+            || chosenKind != kind
     }
 
     var body: some View {
