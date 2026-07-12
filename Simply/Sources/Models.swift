@@ -196,7 +196,7 @@ struct Product {
     let flaggedIngredients: [FlaggedIngredient]
     let isOrganic: Bool
     let isBeverage: Bool
-    let categoryTag: String?
+    let categoryTags: [String]     // OFF category hierarchy, broad → specific, for alternatives
     let allergensTags: [String]
     let tracesTags: [String]
     let ingredientsAnalysisTags: [String]

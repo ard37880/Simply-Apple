@@ -344,41 +344,108 @@ final class ProductRepository {
         let band: ScoreBand
     }
 
+    /// Better-scoring US products of the same kind of food. Tries the most
+    /// specific usable OFF category first and only widens within same-kind
+    /// tags (himalaya-salts → salts), never into department-level buckets
+    /// like "condiments" — a salt should suggest salts or nothing, not
+    /// mustard. No usable category or no qualifying products = no section.
     func alternatives(for product: Product, currentScore: Int?) async -> [Alternative] {
-        guard product.kind == .food, let category = product.categoryTag else { return [] }
-        var components = URLComponents(
-            url: Self.offBase.appendingPathComponent("api/v2/search"),
-            resolvingAgainstBaseURL: false)!
-        components.queryItems = [
-            .init(name: "categories_tags", value: category),
-            .init(name: "countries_tags", value: "en:united-states"),
-            .init(name: "fields", value: "code,product_name,brands,quantity,image_front_url,nutriscore_grade,nova_group,additives_tags,labels_tags,categories_tags,ingredients_text,nutriments,serving_size,serving_quantity"),
-            .init(name: "page_size", value: "24"),
-        ]
-        var request = URLRequest(url: components.url!)
-        request.setValue("Simply-iOS/1.0 (Studio86)", forHTTPHeaderField: "User-Agent")
-        guard let (data, _) = try? await URLSession.shared.data(for: request),
-              let response = try? JSONDecoder().decode(SearchResponse.self, from: data)
-        else { return [] }
-
+        guard product.kind == .food else { return [] }
         let diets = ProfileStore.shared.diets
         let floor = max((currentScore ?? 0) + 15, 50)
-        var seenNames = Set<String>()
-        var results: [Alternative] = []
-        for dto in response.products ?? [] {
-            guard let code = dto.code, code != product.barcode else { continue }
-            let candidate = Self.toDomain(dto, barcode: code, sourceDb: nil)
-            let score = ScoreEngine.score(candidate, diets: diets)
-            guard let total = score.displayTotal, total >= floor,
-                  let band = score.displayBand,
-                  seenNames.insert(candidate.name.lowercased()).inserted
+        for category in Self.alternativeCategories(product.categoryTags) {
+            var components = URLComponents(
+                url: Self.offBase.appendingPathComponent("api/v2/search"),
+                resolvingAgainstBaseURL: false)!
+            components.queryItems = [
+                .init(name: "categories_tags", value: category),
+                .init(name: "countries_tags", value: "en:united-states"),
+                .init(name: "fields", value: "code,product_name,brands,quantity,image_front_url,nutriscore_grade,nova_group,additives_tags,labels_tags,categories_tags,ingredients_text,nutriments,serving_size,serving_quantity"),
+                .init(name: "page_size", value: "24"),
+            ]
+            var request = URLRequest(url: components.url!)
+            request.setValue("Simply-iOS/1.0 (Studio86)", forHTTPHeaderField: "User-Agent")
+            guard let (data, _) = try? await URLSession.shared.data(for: request),
+                  let response = try? JSONDecoder().decode(SearchResponse.self, from: data)
             else { continue }
-            results.append(Alternative(
-                barcode: code, name: candidate.name, brand: candidate.brand,
-                imageUrl: candidate.imageUrl, score: total, band: band))
+
+            var seenNames = Set<String>()
+            var results: [Alternative] = []
+            for dto in response.products ?? [] {
+                guard let code = dto.code, code != product.barcode else { continue }
+                let candidate = Self.toDomain(dto, barcode: code, sourceDb: nil)
+                let score = ScoreEngine.score(candidate, diets: diets)
+                guard let total = score.displayTotal, total >= floor,
+                      let band = score.displayBand,
+                      seenNames.insert(candidate.name.lowercased()).inserted
+                else { continue }
+                results.append(Alternative(
+                    barcode: code, name: candidate.name, brand: candidate.brand,
+                    imageUrl: candidate.imageUrl, score: total, band: band))
+            }
+            if !results.isEmpty {
+                return Array(results.sorted { $0.score > $1.score }.prefix(6))
+            }
         }
-        return Array(results.sorted { $0.score > $1.score }.prefix(6))
+        return []
     }
+
+    /// Categories worth searching for alternatives, most specific first.
+    /// Keeps only canonical English tags (community entries like
+    /// "en:Rock Salt" or French tags search unreliably) and drops
+    /// department-level buckets that mix unlike foods.
+    static func alternativeCategories(_ tags: [String]) -> [String] {
+        tags.reversed()
+            .filter { tag in
+                tag.range(of: "^en:[a-z0-9-]+$", options: .regularExpression) != nil
+                    && !broadCategories.contains(tag)
+            }
+            .prefix(3)
+            .map { $0 }
+    }
+
+    // Department-level OFF categories too broad for like-for-like
+    // suggestions. Keep in sync with the Android copy in ProductRepository.kt.
+    private static let broadCategories: Set<String> = [
+        "en:foods",
+        "en:beverages",
+        "en:beverages-and-beverages-preparations",
+        "en:plant-based-foods-and-beverages",
+        "en:plant-based-foods",
+        "en:snacks",
+        "en:sweet-snacks",
+        "en:salty-snacks",
+        "en:condiments",
+        "en:seasonings",
+        "en:sauces",
+        "en:spreads",
+        "en:fats",
+        "en:groceries",
+        "en:dairies",
+        "en:fermented-foods",
+        "en:fermented-milk-products",
+        "en:meats",
+        "en:meats-and-their-products",
+        "en:seafood",
+        "en:frozen-foods",
+        "en:canned-foods",
+        "en:fresh-foods",
+        "en:refrigerated-foods",
+        "en:dried-products",
+        "en:dried-products-to-be-rehydrated",
+        "en:cereals-and-potatoes",
+        "en:cereals-and-their-products",
+        "en:breakfasts",
+        "en:desserts",
+        "en:meals",
+        "en:prepared-meals",
+        "en:biscuits-and-cakes",
+        "en:fruits-and-vegetables-based-foods",
+        "en:fruits-based-foods",
+        "en:vegetables-based-foods",
+        "en:farming-products",
+        "en:sweeteners",
+    ]
 
     // MARK: Search (Open Food Facts text search, scored like scans)
 
@@ -532,7 +599,7 @@ final class ProductRepository {
             flaggedIngredients: flagged,
             isOrganic: (dto.labels_tags ?? []).contains { organicLabels.contains($0) },
             isBeverage: (dto.categories_tags ?? []).contains("en:beverages"),
-            categoryTag: dto.categories_tags?.last,
+            categoryTags: dto.categories_tags ?? [],
             allergensTags: dto.allergens_tags ?? [],
             tracesTags: dto.traces_tags ?? [],
             ingredientsAnalysisTags: dto.ingredients_analysis_tags ?? [],
