@@ -168,9 +168,17 @@ struct ProductView: View {
                 if !score.euBanned.isEmpty { bannedBanner(score.euBanned) }
 
                 if product.servingQuantity != nil, !score.ingredientBased {
+                    // OFF serving sizes are often shouty label text
+                    // ("1 TORTILLA (41 g)"); lowercase all-caps strings so
+                    // the toggle reads naturally.
+                    let serving = product.servingSize.map { s in
+                        s.contains(where: { $0.isLetter }) &&
+                            !s.contains(where: { $0.isLowercase })
+                            ? s.lowercased() : s
+                    }
                     Toggle(isOn: $perServing) {
                         Text(perServing
-                            ? "per serving (\(product.servingSize ?? "?"))"
+                            ? "per serving: \(serving ?? "?")"
                             : "per 100 g")
                             .font(.callout)
                     }
@@ -692,13 +700,16 @@ struct Metric: Identifiable {
                 cutoffs: [120, 360, 600],
                 comments: ["Low sodium", "Moderate sodium", "Quite salty", "Very salty"]))
         }
-        if let protein = n.proteins {
+        // Protein and fiber are positives, so a trace amount (or zero) must
+        // not produce a "Contains ..." row — that reads as a contradiction
+        // next to the 0 g value. Below 0.5 g/100 g the row is not a positive.
+        if let protein = n.proteins, protein >= 0.5 {
             metrics.append(Metric(label: "Protein", valuePer100g: protein, unit: "g",
                 cutoffs: [8], gaugeMax: 16, verdict: .good,
                 comment: protein >= 8 ? "Rich in protein" : "Contains protein",
                 higherIsBetter: true))
         }
-        if let fiber = n.fiber {
+        if let fiber = n.fiber, fiber >= 0.5 {
             metrics.append(Metric(label: "Fiber", valuePer100g: fiber, unit: "g",
                 cutoffs: [3.5], gaugeMax: 7, verdict: .good,
                 comment: fiber >= 3.5 ? "Rich in fiber" : "Contains fiber",
@@ -827,7 +838,12 @@ struct MetricRow: View {
                         Text(metric.comment).font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Text(format(value) + (metric.unit == "Cal" ? "" : " ") + metric.unit)
+                    // Calories and milligrams read as whole numbers:
+                    // "118.4Cal" and "270.2 mg" imply precision the label
+                    // data doesn't have.
+                    Text((metric.unit == "Cal" || metric.unit == "mg"
+                        ? String(Int(value.rounded()))
+                        : format(value)) + " " + metric.unit)
                         .font(.body.weight(.semibold))
                     Image(systemName: expanded ? "chevron.up" : "chevron.down")
                         .font(.caption)
