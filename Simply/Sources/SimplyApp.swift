@@ -11,8 +11,13 @@ struct SimplyApp: App {
                 .environmentObject(profile)
                 .environmentObject(history)
                 .task {
-                    // One recall check per app open; no-op unless opted in.
-                    await RecallChecker.checkAndNotify()
+                    // Server-driven feature flags, then one recall check per
+                    // app open (a no-op unless opted in, and a premium
+                    // feature once the production gates flip).
+                    await Entitlements.shared.refresh()
+                    if !Entitlements.shared.locked(.recallAlerts) {
+                        await RecallChecker.checkAndNotify()
+                    }
                 }
         }
     }

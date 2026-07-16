@@ -98,6 +98,22 @@ final class LocationTagger: NSObject, CLLocationManagerDelegate {
         return region.isEmpty ? nil : region
     }
 
+    /// Like `region()` but with the state as its two-letter code
+    /// ("Austin, TX"), the shape the crowdsourcing endpoint accepts.
+    func cityState() async -> String? {
+        let status = manager.authorizationStatus
+        guard status == .authorizedWhenInUse || status == .authorizedAlways else { return nil }
+        manager.requestLocation()
+        guard let location = manager.location else { return nil }
+        guard let placemark = try? await CLGeocoder()
+            .reverseGeocodeLocation(location).first else { return nil }
+        guard let city = (placemark.locality ?? placemark.subAdministrativeArea)?
+            .trimmingCharacters(in: .whitespaces), !city.isEmpty,
+            let state = Self.toStateCode(placemark.administrativeArea)
+        else { return nil }
+        return "\(city), \(state)"
+    }
+
     /// Resolves the device position to a two-letter US state code and
     /// caches it; returns nil (leaving any cached value in place) without
     /// permission, a fix, or a geocoder result.

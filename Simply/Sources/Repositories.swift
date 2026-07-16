@@ -325,7 +325,7 @@ final class ProductRepository {
         guard response.status == 1, let dto = response.product else { return .notFound }
 
         let product = Self.toDomain(dto, barcode: barcode, sourceDb: response.simply_source)
-        let score = ScoreEngine.score(product, diets: ProfileStore.shared.diets)
+        let score = ScoreEngine.score(product, diets: Entitlements.shared.activeDiets)
         // History keeps the standard score so past scans stay stable when
         // preferences change.
         HistoryStore.shared.record(product: product, score: score)
@@ -351,7 +351,7 @@ final class ProductRepository {
     /// mustard. No usable category or no qualifying products = no section.
     func alternatives(for product: Product, currentScore: Int?) async -> [Alternative] {
         guard product.kind == .food else { return [] }
-        let diets = ProfileStore.shared.diets
+        let diets = Entitlements.shared.activeDiets
         let floor = max((currentScore ?? 0) + 15, 50)
         for category in Self.alternativeCategories(product.categoryTags) {
             var components = URLComponents(
@@ -484,7 +484,7 @@ final class ProductRepository {
               let response = try? JSONDecoder().decode(SearchResponse.self, from: data)
         else { return nil }
 
-        let diets = ProfileStore.shared.diets
+        let diets = Entitlements.shared.activeDiets
         var results: [SearchResult] = []
         // OFF search pages can repeat a code; the results list is keyed by
         // barcode, so keep only the first occurrence.

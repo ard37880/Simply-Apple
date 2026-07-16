@@ -25,6 +25,8 @@ final class ProfileStore: ObservableObject {
     @AppStorage("profile.recallAlerts") var recallAlerts: Bool = false
     /// Tag store submissions with a coarse "City, State".
     @AppStorage("profile.locationTagging") var locationTagging: Bool = false
+    /// Answer "did you buy this?" and see what other scanners chose.
+    @AppStorage("profile.crowdsourcing") var crowdsourcing: Bool = false
     /// App appearance: "light" (default), "dark", or "system".
     /// Older releases stored "khaki" for light; readers map it to light.
     @AppStorage("profile.appearance") var appearance: String = "light"

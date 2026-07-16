@@ -44,10 +44,13 @@ struct ScannerView: View {
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    onSearch()
-                } label: {
-                    Image(systemName: "magnifyingglass")
+                // Search joins premium when the production gates flip on.
+                if !Entitlements.shared.locked(.search) {
+                    Button {
+                        onSearch()
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                    }
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {

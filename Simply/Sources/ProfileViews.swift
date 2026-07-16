@@ -248,6 +248,17 @@ struct ProfileView: View {
                         }
                     )
                 )
+                PermissionToggleRow(
+                    title: "Opt in for crowdsourcing",
+                    description: "After a scan, answer one question: did you buy it? "
+                        + "You'll see what other scanners chose once a product has "
+                        + "enough answers. Answers are anonymous counts, never tied "
+                        + "to you, and each product is only asked once.",
+                    isOn: Binding(
+                        get: { profile.crowdsourcing },
+                        set: { on in profile.crowdsourcing = on }
+                    )
+                )
 
                 donationCard
                     .padding(.top, 24)

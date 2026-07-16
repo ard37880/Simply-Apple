@@ -90,17 +90,20 @@ struct HomeView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 18))
                 .padding(.top, 24)
 
-                Button(action: onSearch) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "magnifyingglass")
-                        Text("Search by name")
+                // Search joins premium when the production gates flip on.
+                if !Entitlements.shared.locked(.search) {
+                    Button(action: onSearch) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "magnifyingglass")
+                            Text("Search by name")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
                     }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 52)
+                    .buttonStyle(.bordered)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .padding(.top, 12)
                 }
-                .buttonStyle(.bordered)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-                .padding(.top, 12)
 
                 HStack {
                     Text("Recent scans")

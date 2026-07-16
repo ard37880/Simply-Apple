@@ -46,6 +46,8 @@ struct ProductView: View {
     @State private var alternatives: [ProductRepository.Alternative] = []
     @State private var showSubmit = false
     @State private var userState: String?
+    @State private var crowdSignal: String?
+    @State private var crowdShowAsk = false
 
     enum LoadState {
         case loading
@@ -138,10 +140,16 @@ struct ProductView: View {
 
     private func load() async {
         state = .loading
+        crowdSignal = nil
+        crowdShowAsk = false
         switch await ProductRepository.shared.lookup(barcode: barcode) {
         case .found(let product, let score):
             perServing = product.servingQuantity != nil
             state = .loaded(product, score)
+            if CrowdRepository.shared.enabled {
+                crowdShowAsk = !CrowdRepository.shared.answered(barcode)
+                crowdSignal = await CrowdRepository.shared.signal(barcode)
+            }
             alternatives = await ProductRepository.shared
                 .alternatives(for: product, currentScore: score.displayTotal)
         case .notFound: state = .notFound
@@ -152,7 +160,9 @@ struct ProductView: View {
     // MARK: Sections
 
     private func detail(_ product: Product, _ score: ScoreResult) -> some View {
-        let hits = PreferenceChecker.check(product, profile: profile)
+        // Preference alerts join premium when the production gates flip on.
+        let hits = Entitlements.shared.locked(.preferenceAlerts)
+            ? [] : PreferenceChecker.check(product, profile: profile)
         let servingFactor = (perServing ? product.servingQuantity : nil).map { $0 / 100 } ?? 1
         let metrics = Metric.build(product)
         let negatives = metrics.filter { !$0.higherIsBetter && $0.verdict != .good }
@@ -164,6 +174,7 @@ struct ProductView: View {
                 header(product, score)
 
                 if !hits.isEmpty { preferenceBanner(hits) }
+                if crowdSignal != nil || crowdShowAsk { crowdCard }
                 if score.total == nil || score.isPartial { missingDataCard(score) }
                 if !score.euBanned.isEmpty { bannedBanner(score.euBanned) }
 
@@ -313,6 +324,41 @@ struct ProductView: View {
             Text("Against your preferences").bold().foregroundStyle(color)
             ForEach(hits) { Text($0.label).font(.subheadline) }
         }
+    }
+
+    /// Opt-in crowdsourcing card: what other scanners chose (once a product
+    /// has enough anonymous answers) and, if this user hasn't answered yet,
+    /// the one ask. Answering hides the question for this product forever.
+    private var crowdCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let line = crowdSignal {
+                Text(line).bold()
+                Text("Based on anonymous answers from Simply Pure users.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if crowdShowAsk {
+                Text("Did you buy this product?")
+                    .bold()
+                    .padding(.top, crowdSignal != nil ? 8 : 0)
+                HStack(spacing: 8) {
+                    Button("Yes") { answerCrowd(true) }
+                        .buttonStyle(.bordered)
+                        .frame(maxWidth: .infinity)
+                    Button("No") { answerCrowd(false) }
+                        .buttonStyle(.bordered)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(Color.simplyCard, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func answerCrowd(_ bought: Bool) {
+        crowdShowAsk = false
+        Task { await CrowdRepository.shared.answer(barcode, bought: bought) }
     }
 
     private func missingDataCard(_ score: ScoreResult) -> some View {
