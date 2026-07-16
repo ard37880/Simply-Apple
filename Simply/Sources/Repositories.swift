@@ -5,7 +5,14 @@ import UIKit
 
 enum RiskDatabase {
 
+    /// Prefer the server-updated copy in the rules cache (see RulesUpdater);
+    /// fall back to the bundled resource if it's absent or fails to parse,
+    /// so a bad download can never break lookups and offline always works.
     static func load(_ resource: String) -> [AdditiveEntry] {
+        if let cached = RulesStore.shared.cachedData(resource),
+           let entries = try? JSONDecoder().decode([AdditiveEntry].self, from: cached) {
+            return entries
+        }
         guard let url = Bundle.main.url(forResource: resource, withExtension: "json"),
               let data = try? Data(contentsOf: url),
               let entries = try? JSONDecoder().decode([AdditiveEntry].self, from: data)
