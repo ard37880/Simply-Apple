@@ -4,6 +4,26 @@ import Foundation
 /// yes/no counts sent to the Simply Pure server; when the user also has
 /// location tagging on, a "yes" carries a coarse "City, ST" so availability
 /// can be understood by region. Nothing identifies the user, and each
+/// Remembers which barcodes the user already answered the bioengineered
+/// label question for, so the product page never re-asks. The answer
+/// itself travels through the facts-submission pipeline and goes live
+/// after review; this store only silences the question on this device.
+enum BioAnswers {
+    private static let answeredKey = "bioengineered.answered"
+
+    static func answered(_ barcode: String) -> Bool {
+        (UserDefaults.standard.stringArray(forKey: answeredKey) ?? [])
+            .contains(barcode)
+    }
+
+    static func markAnswered(_ barcode: String) {
+        var done = UserDefaults.standard.stringArray(forKey: answeredKey) ?? []
+        guard !done.contains(barcode) else { return }
+        done.append(barcode)
+        UserDefaults.standard.set(done, forKey: answeredKey)
+    }
+}
+
 /// product is only ever asked about once (answered barcodes are remembered
 /// on the device).
 final class CrowdRepository {

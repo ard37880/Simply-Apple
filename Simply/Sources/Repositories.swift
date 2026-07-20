@@ -26,13 +26,25 @@ final class AdditiveRepository {
     static let shared = AdditiveRepository()
 
     private let byId: [String: Additive]
+    // Normalized US label names (entry name, usName, synonyms) -> additive.
+    private let byLabelName: [String: Additive]
 
     private init() {
         var map: [String: Additive] = [:]
+        var labels: [String: Additive] = [:]
         for entry in RiskDatabase.load("additives") {
-            map[entry.id] = Additive(entry: entry)
+            let additive = Additive(entry: entry)
+            map[entry.id] = additive
+            var names = [entry.name]
+            if let us = entry.usName { names.append(us) }
+            names.append(contentsOf: entry.synonyms ?? [])
+            for name in names {
+                let key = Self.normalizeLabelName(name)
+                if key.count >= 3 && labels[key] == nil { labels[key] = additive }
+            }
         }
         byId = map
+        byLabelName = labels
     }
 
     /// Resolve OFF tags like "en:e150d" / "en:e322i" (variants fall back
@@ -53,6 +65,106 @@ final class AdditiveRepository {
             }
         }
         return (order.compactMap { rated[$0] }, unrated)
+    }
+
+    /// Fallback for records whose additive tags were never parsed upstream
+    /// (common for US products, where the ingredient list is OCR'd but no
+    /// tags are computed): match additive names from the raw ingredient
+    /// text against the database's names, US label names and synonyms.
+    /// Same rules as Android. Only called when tag resolution produced
+    /// nothing, so a record with real tags is never double-counted.
+    func detectFromText(_ ingredientsText: String?) -> (rated: [Additive], unrated: [UnratedAdditive]) {
+        guard let text = ingredientsText, !text.isEmpty else { return ([], []) }
+        var rated: [String: Additive] = [:]
+        var order: [String] = []
+        var unrated: [String: UnratedAdditive] = [:]
+        var unratedOrder: [String] = []
+        // '.' is not a separator: it appears inside label tokens ("No. 1");
+        // normalization strips it instead.
+        let tokens = text
+            .split(whereSeparator: { ",;:()[]·•".contains($0) })
+            .map { Self.normalizeLabelName(String($0)) }
+            .filter { !$0.isEmpty }
+        for token in tokens {
+            // "e211" / "ins 150d" written out in the ingredient list
+            if token.range(of: "^(e|ins) ?\\d{3,4}[a-z]?$", options: .regularExpression) != nil {
+                let code = "e" + token.drop(while: { !$0.isNumber })
+                let base = code.range(of: "^e\\d+[a-d]?", options: .regularExpression)
+                    .map { String(code[$0]) }
+                if let hit = byId[code] ?? base.flatMap({ byId[$0] }) {
+                    if rated[hit.id] == nil { order.append(hit.id); rated[hit.id] = hit }
+                } else if unrated[code] == nil {
+                    unrated[code] = UnratedAdditive(eNumber: code.uppercased())
+                    unratedOrder.append(code)
+                }
+                continue
+            }
+            var hit = byLabelName[token]
+            if hit == nil {
+                hit = byLabelName.first { key, _ in
+                    key.count >= 5 && token.hasPrefix(key + " ")
+                }?.value
+            }
+            if hit == nil { hit = familyMatch(token) }
+            if let hit {
+                if rated[hit.id] == nil { order.append(hit.id); rated[hit.id] = hit }
+                continue
+            }
+            // Positive-list principle: a declared but unidentifiable
+            // additive class doesn't get the benefit of the doubt.
+            if token.hasPrefix("modified") && token.contains("starch") {
+                if unrated["modified-starch"] == nil {
+                    unrated["modified-starch"] = UnratedAdditive(eNumber: "Modified starch")
+                    unratedOrder.append("modified-starch")
+                }
+            } else if Self.genericColorTokens.contains(token) {
+                if unrated["artificial-color"] == nil {
+                    unrated["artificial-color"] = UnratedAdditive(eNumber: "Artificial color")
+                    unratedOrder.append("artificial-color")
+                }
+            }
+        }
+        // "Artificial color (Yellow 5, Red 40)": once the actual dyes are
+        // identified, the generic marker is redundant. Colors are E100-E199.
+        if order.contains(where: { $0.range(of: "^e1\\d{2}[a-z]?$", options: .regularExpression) != nil }) {
+            unrated["artificial-color"] = nil
+        }
+        return (order.compactMap { rated[$0] }, unratedOrder.compactMap { unrated[$0] })
+    }
+
+    // Ingredient classes where the label names a family, not a single
+    // rateable substance.
+    private func familyMatch(_ token: String) -> Additive? {
+        if token.contains("lecithin") { return byId["e322"] }
+        if token.contains("bromated") { return byId["e924"] }
+        if token.contains("monoglyceride") || token.contains("diglyceride") { return byId["e471"] }
+        if token.contains("carrageenan") { return byId["e407"] }
+        return nil
+    }
+
+    private static let genericColorTokens: Set<String> = [
+        "artificial color", "artificial colors",
+        "artificial coloring", "artificial colorings",
+        "color added", "colors added",
+    ]
+
+    /// Normalizes a US label ingredient ("FD&C Yellow No. 5 Lake",
+    /// "Mono- and Diglycerides") and the database's own names to a shared
+    /// comparable form.
+    private static func normalizeLabelName(_ raw: String) -> String {
+        var s = raw.lowercased()
+            .replacingOccurrences(of: "fd&c", with: " ")
+            .replacingOccurrences(of: "d&c", with: " ")
+            .replacingOccurrences(of: "&", with: " and ")
+        s = s.replacingOccurrences(of: "[-–—/*#.%]", with: " ", options: .regularExpression)
+        s = s.replacingOccurrences(of: "sulph", with: "sulf")
+            .replacingOccurrences(of: "aluminium", with: "aluminum")
+            .replacingOccurrences(of: "colour", with: "color")
+        let dropped: Set<String> = ["no", "lake", "dye"]
+        return s.split(separator: " ")
+            .map(String.init)
+            .filter { !dropped.contains($0) }
+            .joined(separator: " ")
     }
 }
 
@@ -543,10 +655,11 @@ final class ProductRepository {
         nutritionOther: String? = nil,
         servingSize: String? = nil, servingQuantity: Double? = nil,
         productName: String? = nil, brands: String? = nil,
-        suggestedCategory: String? = nil
+        suggestedCategory: String? = nil, bioengineered: String? = nil
     ) async -> Bool {
         var payload: [String: Any] = [:]
         if let productName { payload["product_name"] = productName }
+        if let bioengineered { payload["bioengineered"] = bioengineered }
         if let brands { payload["brands"] = brands }
         if let suggestedCategory { payload["suggested_category"] = suggestedCategory }
         if let ingredientsText { payload["ingredients_text"] = ingredientsText }
@@ -578,7 +691,15 @@ final class ProductRepository {
             rated = IngredientRiskRepository.household.match(dto.ingredients_text)
             unrated = []
         default:
-            (rated, unrated) = AdditiveRepository.shared.resolve(dto.additives_tags ?? [])
+            let resolved = AdditiveRepository.shared.resolve(dto.additives_tags ?? [])
+            if resolved.rated.isEmpty && resolved.unrated.isEmpty {
+                // Many US records carry ingredient text that upstream never
+                // parsed into additive tags; fall back to name matching so
+                // an aspartame soda can't score as additive-free.
+                (rated, unrated) = AdditiveRepository.shared.detectFromText(dto.ingredients_text)
+            } else {
+                (rated, unrated) = resolved
+            }
         }
         let flagged: [FlaggedIngredient]
         switch sourceDb {
@@ -607,6 +728,7 @@ final class ProductRepository {
             isOrganic: (dto.labels_tags ?? []).contains { organicLabels.contains($0) },
             isBeverage: (dto.categories_tags ?? []).contains("en:beverages"),
             categoryTags: dto.categories_tags ?? [],
+            labelsTags: dto.labels_tags ?? [],
             allergensTags: dto.allergens_tags ?? [],
             tracesTags: dto.traces_tags ?? [],
             ingredientsAnalysisTags: dto.ingredients_analysis_tags ?? [],
@@ -624,7 +746,11 @@ final class ProductRepository {
                     all: $0.all)
             },
             sourceDb: sourceDb,
-            nutritionOther: dto.nutrition_other?.isEmpty == false ? dto.nutrition_other : nil
+            nutritionOther: dto.nutrition_other?.isEmpty == false ? dto.nutrition_other : nil,
+            bioengineered: dto.bioengineered.flatMap { answer in
+                let lowered = answer.lowercased()
+                return lowered == "yes" || lowered == "no" ? lowered : nil
+            }
         )
     }
 }

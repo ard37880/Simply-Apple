@@ -197,6 +197,7 @@ struct Product {
     let isOrganic: Bool
     let isBeverage: Bool
     let categoryTags: [String]     // OFF category hierarchy, broad → specific, for alternatives
+    var labelsTags: [String] = []  // OFF label claims (organic, gluten-free, non-GMO, ...)
     let allergensTags: [String]
     let tracesTags: [String]
     let ingredientsAnalysisTags: [String]
@@ -208,6 +209,9 @@ struct Product {
     let sourceDb: String?
     /// Free-text label nutrients with no OFF key, from our overrides.
     var nutritionOther: String? = nil
+    /// "yes"/"no" when a user reported whether the package shows the US
+    /// Bioengineered Food disclosure (reviewed), nil when unanswered.
+    var bioengineered: String? = nil
 
     var kind: ProductKind {
         switch sourceDb {
@@ -242,6 +246,9 @@ struct ProductDTO: Decodable {
     var nova_group: Int?
     var additives_tags: [String]?
     var labels_tags: [String]?
+    // "yes"/"no": user-reported US Bioengineered Food disclosure — served
+    // from our overrides only.
+    var bioengineered: String?
     var categories_tags: [String]?
     var allergens_tags: [String]?
     var traces_tags: [String]?

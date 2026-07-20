@@ -80,6 +80,7 @@ final class ProfileStore: ObservableObject {
     // Specific ingredients to flag — its own profile section, same
     // underlying storage set as dietOptions so nothing migrates.
     static let avoidOptions: [DietOption] = [
+        .init(key: "no_bioengineered", label: "Bioengineered (GMO)"),
         .init(key: "no_palm_oil", label: "Palm oil"),
         .init(key: "no_seed_oils", label: "Seed oils"),
         .init(key: "no_hydrogenated", label: "Hydrogenated oils"),
@@ -137,8 +138,22 @@ enum PreferenceChecker {
             } else if product.tracesTags.contains(option.offTag) {
                 hits.append(.init(label: "May contain traces of \(option.label.lowercased())", severity: .traces))
             } else if product.allergensTags.isEmpty, !text.isEmpty,
-                      (allergenKeywords[key] ?? []).contains(where: text.contains) {
+                      keywordLikely(key, text: text, labelsTags: product.labelsTags) {
                 hits.append(.init(label: "Likely contains \(option.label.lowercased())", severity: .likely))
+            }
+        }
+
+        // Bioengineered (GMO): the user-reported label disclosure wins,
+        // then a non-GMO or organic claim clears it, then the major US
+        // bioengineered crops make it "likely". Same rules as Android.
+        if profile.diets.contains("no_bioengineered") {
+            if product.bioengineered == "yes" {
+                hits.append(.init(label: "Contains bioengineered ingredients", severity: .contains))
+            } else if product.bioengineered == nil,
+                      !product.isOrganic,
+                      !product.labelsTags.contains(where: { nonGmoLabels.contains($0) }),
+                      text.range(of: beCropWords, options: .regularExpression) != nil {
+                hits.append(.init(label: "Likely contains bioengineered ingredients", severity: .likely))
             }
         }
 
@@ -281,8 +296,53 @@ enum PreferenceChecker {
         return hits.filter { seen.insert($0.label).inserted }
     }
 
+    /// Keyword fallback for one allergen. Same rules as Android: gluten
+    /// gets whole-word matching (plain substrings flagged buckwheat and
+    /// maltodextrin) and is skipped entirely when the product carries a
+    /// gluten-free label.
+    private static func keywordLikely(_ key: String, text: String, labelsTags: [String]) -> Bool {
+        guard key == "gluten" else {
+            return (allergenKeywords[key] ?? []).contains(where: text.contains)
+        }
+        if labelsTags.contains(where: { glutenFreeLabels.contains($0) }) { return false }
+        if text.range(of: glutenWords, options: .regularExpression) != nil { return true }
+        // Unqualified "flour" means wheat flour on a US label, but rice
+        // flour, almond flour etc. are gluten-free.
+        guard let regex = try? NSRegularExpression(pattern: "\\b(\\w*)\\s*flour\\b") else { return false }
+        let range = NSRange(text.startIndex..., in: text)
+        return regex.matches(in: text, range: range).contains { match in
+            guard let r = Range(match.range(at: 1), in: text) else { return false }
+            return !glutenFreeFlours.contains(String(text[r]))
+        }
+    }
+
+    private static let glutenWords =
+        "\\b(wheat|barley|rye|malt|malted|spelt|semolina|durum|farro|triticale|seitan|graham)\\b"
+    private static let glutenFreeFlours: Set<String> = [
+        "rice", "corn", "masa", "almond", "coconut", "oat", "tapioca", "potato",
+        "chickpea", "garbanzo", "cassava", "buckwheat", "quinoa", "sorghum",
+        "teff", "amaranth", "millet", "soy", "pea", "lentil", "hazelnut",
+        "peanut", "banana", "plantain", "arrowroot",
+    ]
+    private static let glutenFreeLabels: Set<String> = [
+        "en:no-gluten", "en:gluten-free", "en:certified-gluten-free",
+    ]
+
+    private static let nonGmoLabels: Set<String> = [
+        "en:no-gmos", "en:no-gmo", "en:gmo-free",
+        "en:non-gmo-project", "en:non-gmo-project-verified",
+    ]
+
+    // Ingredients from the US crops that are overwhelmingly grown
+    // bioengineered (corn, soy, canola, sugar beet, cottonseed). Note the
+    // US disclosure standard exempts highly refined ingredients, so "no
+    // disclosure" does not mean "no bioengineered crops" — hence "likely".
+    private static let beCropWords =
+        "\\b(corn syrup|corn starch|cornstarch|corn oil|corn flour|corn meal|cornmeal|" +
+        "dextrose|maltodextrin|soybean|soy protein|soy flour|soy lecithin|" +
+        "canola|cottonseed|sugar beet|beet sugar)\\b"
+
     private static let allergenKeywords: [String: [String]] = [
-        "gluten": ["wheat", "barley", "rye", "malt", "flour"],
         "milk": ["milk", "whey", "casein", "butter", "cream", "cheese", "lactose"],
         "eggs": ["egg"],
         "peanuts": ["peanut"],

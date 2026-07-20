@@ -48,6 +48,8 @@ struct ProductView: View {
     @State private var userState: String?
     @State private var crowdSignal: String?
     @State private var crowdShowAsk = false
+    @State private var bioShowAsk = false
+    @State private var bioJustAnswered = false
 
     enum LoadState {
         case loading
@@ -142,10 +144,17 @@ struct ProductView: View {
         state = .loading
         crowdSignal = nil
         crowdShowAsk = false
+        bioShowAsk = false
+        bioJustAnswered = false
         switch await ProductRepository.shared.lookup(barcode: barcode) {
         case .found(let product, let score):
             perServing = product.servingQuantity != nil
             state = .loaded(product, score)
+            // Only food carries the US Bioengineered Food disclosure, and
+            // only ask while the database has no answer yet.
+            bioShowAsk = product.kind == .food &&
+                product.bioengineered == nil &&
+                !BioAnswers.answered(barcode)
             if CrowdRepository.shared.enabled {
                 crowdShowAsk = !CrowdRepository.shared.answered(barcode)
                 crowdSignal = await CrowdRepository.shared.signal(barcode)
@@ -175,6 +184,10 @@ struct ProductView: View {
 
                 if !hits.isEmpty { preferenceBanner(hits) }
                 if crowdSignal != nil || crowdShowAsk { crowdCard }
+                if product.kind == .food,
+                   bioShowAsk || bioJustAnswered || product.bioengineered != nil {
+                    bioCard(product)
+                }
                 if score.total == nil || score.isPartial { missingDataCard(score) }
                 if !score.euBanned.isEmpty { bannedBanner(score.euBanned) }
 
@@ -359,6 +372,52 @@ struct ProductView: View {
     private func answerCrowd(_ bought: Bool) {
         crowdShowAsk = false
         Task { await CrowdRepository.shared.answer(barcode, bought: bought) }
+    }
+
+    /// Bioengineered (GMO) product data: shows the reviewed answer when
+    /// the database has one, otherwise asks the user to check the package
+    /// for the US Bioengineered Food disclosure. One tap submits; the
+    /// answer goes live after review, same as every other correction.
+    private func bioCard(_ product: Product) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Bioengineered (GMO)").bold()
+            if product.bioengineered == "yes" {
+                Text("The package shows the US Bioengineered Food disclosure.")
+                    .font(.subheadline)
+            } else if product.bioengineered == "no" {
+                Text("The package shows no bioengineered food disclosure.")
+                    .font(.subheadline)
+            } else if bioJustAnswered {
+                Text("Thanks. Your answer goes live for everyone once reviewed.")
+                    .font(.subheadline)
+            } else if bioShowAsk {
+                Text("Does the package say Bioengineered food or Contains a bioengineered food ingredient? It is usually near the ingredient list.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    Button("Yes") { answerBio(true) }
+                        .buttonStyle(.bordered)
+                        .frame(maxWidth: .infinity)
+                    Button("No") { answerBio(false) }
+                        .buttonStyle(.bordered)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(Color.simplyCard, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func answerBio(_ disclosed: Bool) {
+        // Remember locally first: even if the post fails, never re-ask.
+        BioAnswers.markAnswered(barcode)
+        bioShowAsk = false
+        bioJustAnswered = true
+        Task {
+            _ = await ProductRepository.shared.submitFacts(
+                barcode: barcode, bioengineered: disclosed ? "yes" : "no")
+        }
     }
 
     private func missingDataCard(_ score: ScoreResult) -> some View {
