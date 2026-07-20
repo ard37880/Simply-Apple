@@ -38,6 +38,8 @@ extension ScoreBand {
 struct ProductView: View {
     let barcode: String
     let onProduct: (String) -> Void
+    /// Jumps straight back to a live scanner with a clean stack.
+    var onScanNext: () -> Void = {}
 
     @EnvironmentObject var profile: ProfileStore
     @Environment(\.dismiss) private var dismiss
@@ -108,6 +110,11 @@ struct ProductView: View {
         .simplyScreenBackground()
         .navigationTitle("Product")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Scan next") { onScanNext() }
+            }
+        }
         .sheet(isPresented: $showSubmit) {
             SubmitView(barcode: barcode, kind: currentKind, unknownKind: isUnknown)
         }

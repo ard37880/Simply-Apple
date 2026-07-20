@@ -10,11 +10,20 @@ struct ScannerView: View {
     @State private var manualCode = ""
     @State private var scannerAvailable =
         DataScannerViewController.isSupported && DataScannerViewController.isAvailable
+    // Returning from a product page, the same package is usually still in
+    // frame; mute that barcode briefly so back means "scan the next item"
+    // instead of bouncing straight back to the page just left. Holding the
+    // same product in frame past the pause deliberately rescans it.
+    @State private var appearedAt = Date.distantPast
+    @State private var lastViewedCode: String?
 
     var body: some View {
         ZStack {
             if scannerAvailable {
                 BarcodeScannerRepresentable { code in
+                    if code == lastViewedCode,
+                       Date().timeIntervalSince(appearedAt) < 4 { return }
+                    lastViewedCode = code
                     onBarcode(code)
                 }
                 .ignoresSafeArea()
@@ -61,6 +70,7 @@ struct ScannerView: View {
                 }
             }
         }
+        .onAppear { appearedAt = Date() }
         .alert("Enter barcode", isPresented: $manualEntry) {
             TextField("UPC / EAN number", text: $manualCode)
                 .keyboardType(.numberPad)

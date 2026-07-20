@@ -129,9 +129,13 @@ struct RootView: View {
             .navigationTitle("Scan a product")
             .navigationBarTitleDisplayMode(.inline)
         case .product(let barcode):
-            ProductView(barcode: barcode) { code in
-                path.append(Route.product(code))
-            }
+            ProductView(
+                barcode: barcode,
+                onProduct: { code in path.append(Route.product(code)) },
+                // Rebuild the stack as home > scanner so repeated
+                // scan-next loops never grow the path.
+                onScanNext: { path = NavigationPath([Route.scanner]) }
+            )
         case .search:
             SearchView { code in
                 path.append(Route.product(code))
