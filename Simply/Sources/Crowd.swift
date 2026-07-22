@@ -1,9 +1,5 @@
 import Foundation
 
-/// The opt-in "did you buy this?" crowdsourcing loop. Answers are anonymous
-/// yes/no counts sent to the Simply Pure server; when the user also has
-/// location tagging on, a "yes" carries a coarse "City, ST" so availability
-/// can be understood by region. Nothing identifies the user, and each
 /// Remembers which barcodes the user already answered the bioengineered
 /// label question for, so the product page never re-asks. The answer
 /// itself travels through the facts-submission pipeline and goes live
@@ -24,6 +20,10 @@ enum BioAnswers {
     }
 }
 
+/// The opt-in "did you buy this?" crowdsourcing loop. Answers are anonymous
+/// yes/no counts sent to the Simply Pure server; when the user also has
+/// location tagging on, a "yes" carries a coarse "City, ST" so availability
+/// can be understood by region. Nothing identifies the user, and each
 /// product is only ever asked about once (answered barcodes are remembered
 /// on the device).
 final class CrowdRepository {
@@ -82,7 +82,7 @@ final class CrowdRepository {
 }
 
 /// Features that move behind the premium subscription at production.
-enum PremiumFeature { case search, personalization, preferenceAlerts, recallAlerts }
+enum PremiumFeature { case search, personalization, preferenceAlerts, recallAlerts, customThemes }
 
 /// Premium gating, dormant during the beta. Whether gates are enforced at
 /// all comes from the server (/api/v2/config), fetched once per launch and

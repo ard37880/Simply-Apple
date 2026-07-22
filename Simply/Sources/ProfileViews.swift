@@ -126,33 +126,13 @@ struct FlowLayout: Layout {
 
 struct OnboardingView: View {
     @EnvironmentObject var profile: ProfileStore
-    // Beta-build welcome, shown once before the profile setup on first
-    // launch. Remove when the app leaves beta.
-    @State private var betaWelcomeSeen = false
+    // A short walkthrough of how the app works comes first; the profile
+    // questions only appear once someone knows what they're setting up.
+    @State private var walkthroughDone = false
 
     var body: some View {
-        if !betaWelcomeSeen {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("You're in the beta!")
-                        .font(.largeTitle.bold())
-                        .padding(.top, 64)
-                    Text("Thank you for joining the Simply Pure beta! You're helping shape the app before it goes public.")
-                        .font(.body)
-                    Text("Please send any and all feedback (bugs, ideas, confusing screens, anything) to hello@studio86.dev.")
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(Color.riskNone)
-                    Button {
-                        betaWelcomeSeen = true
-                    } label: {
-                        Text("Let's set things up")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .padding(.top, 24)
-                }
-                .padding(24)
-            }
+        if !walkthroughDone {
+            OnboardingWalkthrough(onFinished: { walkthroughDone = true })
         } else {
             onboardingForm
         }
@@ -190,6 +170,12 @@ struct OnboardingView: View {
 
 struct ProfileView: View {
     @EnvironmentObject var profile: ProfileStore
+    // The gallery starts open when a theme is already the active
+    // appearance, mirroring Android.
+    @State private var themesExpanded =
+        ProfileStore.shared.appearance.hasPrefix(appearanceThemePrefix)
+    @State private var syncPaired = SyncEngine.shared.paired
+    @State private var syncEnterCode = ""
 
     var body: some View {
         ScrollView {
@@ -203,18 +189,36 @@ struct ProfileView: View {
                 Text("Appearance")
                     .font(.headline)
                     .padding(.top, 24)
-                Picker("Appearance", selection: Binding(
-                    get: { Appearance.from(profile.appearance) },
-                    set: { newValue in
-                        profile.objectWillChange.send()
-                        profile.appearance = newValue.rawValue
+                // Themes sits in the row as a fourth mode; tapping it drops
+                // the preset gallery down. Joins premium when the production
+                // gates flip on, same as search.
+                let themesAvailable = !Entitlements.shared.locked(.customThemes)
+                appearanceSegments(themesAvailable: themesAvailable)
+                if themesAvailable && themesExpanded {
+                    Text("Hand-tuned palettes that recolor the whole app. "
+                        + "Scores keep their green, yellow and red.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 8)
+                    FlowLayout(spacing: 10) {
+                        ForEach(themePresets) { preset in
+                            let key = appearanceThemePrefix + preset.id
+                            ThemeSwatch(
+                                preset: preset,
+                                selected: profile.appearance == key
+                            ) {
+                                profile.objectWillChange.send()
+                                profile.appearance = key
+                            }
+                        }
                     }
-                )) {
-                    ForEach(Appearance.allCases) { option in
-                        Text(option.label).tag(option)
-                    }
+                    .padding(.top, 10)
                 }
-                .pickerStyle(.segmented)
+
+                Text("Sync between devices")
+                    .font(.headline)
+                    .padding(.top, 24)
+                syncSection
 
                 Text("Alerts & location")
                     .font(.headline)
@@ -236,27 +240,21 @@ struct ProfileView: View {
                     )
                 )
                 PermissionToggleRow(
-                    title: "Tag store reports with your area",
-                    description: "Adds a coarse \"City, State\" to store submissions "
-                        + "so availability can roll out by region. Used only when you "
-                        + "submit, never stored otherwise.",
+                    title: "Opt in for crowdsourcing",
+                    description: "Everything community, one switch: after a scan "
+                        + "you may get two quick questions (did you buy it, and does "
+                        + "the label show a bioengineered disclosure), you'll see "
+                        + "what other scanners chose once a product has enough "
+                        + "answers, and store reports carry a coarse \"City, State\" "
+                        + "so availability can roll out by region. Answers are "
+                        + "anonymous counts, never tied to you.",
                     isOn: Binding(
-                        get: { profile.locationTagging },
+                        get: { profile.crowdsourcing },
                         set: { on in
+                            profile.crowdsourcing = on
                             profile.locationTagging = on
                             if on { LocationTagger.shared.requestPermission() }
                         }
-                    )
-                )
-                PermissionToggleRow(
-                    title: "Opt in for crowdsourcing",
-                    description: "After a scan, answer one question: did you buy it? "
-                        + "You'll see what other scanners chose once a product has "
-                        + "enough answers. Answers are anonymous counts, never tied "
-                        + "to you, and each product is only asked once.",
-                    isOn: Binding(
-                        get: { profile.crowdsourcing },
-                        set: { on in profile.crowdsourcing = on }
                     )
                 )
 
@@ -294,6 +292,98 @@ struct ProfileView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
+    /// Light / Dark / System / Themes as one segmented row. Built from
+    /// buttons rather than a segmented Picker because the Themes segment
+    /// toggles the gallery open and closed on every tap, including taps
+    /// while it is already selected, which a Picker cannot report.
+    @ViewBuilder
+    private var syncSection: some View {
+        if !syncPaired {
+            Text("Keep two devices in step with a pair code. Your data is "
+                + "encrypted with the code before it leaves this phone, "
+                + "and the code itself is never sent to us, so nobody "
+                + "but your devices can read it. No account needed.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Button("Create a pair code") {
+                SyncEngine.shared.createCode()
+                syncPaired = true
+                Task { await SyncEngine.shared.syncNow(force: true) }
+            }
+            .buttonStyle(.borderedProminent)
+            TextField("Have a code? Enter it", text: $syncEnterCode)
+                .textFieldStyle(.roundedBorder)
+                .textInputAutocapitalization(.characters)
+                .autocorrectionDisabled()
+            if !syncEnterCode.trimmingCharacters(in: .whitespaces).isEmpty {
+                Button("Join") {
+                    if SyncEngine.shared.join(syncEnterCode) {
+                        syncEnterCode = ""
+                        syncPaired = true
+                        Task { await SyncEngine.shared.syncNow(force: true) }
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        } else {
+            if let code = SyncEngine.shared.currentCode {
+                Text("Pair code: \(code)")
+                    .font(.subheadline.weight(.bold))
+            }
+            Text("Syncing is on. Enter the code above on another device "
+                + "and scans and preferences merge whenever either "
+                + "device opens the app.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack(spacing: 12) {
+                Button("Sync now") {
+                    Task { await SyncEngine.shared.syncNow(force: true) }
+                }
+                .buttonStyle(.borderedProminent)
+                Button("Stop syncing") {
+                    SyncEngine.shared.unpair()
+                    syncPaired = false
+                }
+            }
+        }
+    }
+
+    private func appearanceSegments(themesAvailable: Bool) -> some View {
+        let themed = profile.appearance.hasPrefix(appearanceThemePrefix)
+        return HStack(spacing: 2) {
+            ForEach(Appearance.allCases) { option in
+                segment(option.label,
+                        selected: !themed && Appearance.from(profile.appearance) == option) {
+                    themesExpanded = false
+                    profile.objectWillChange.send()
+                    profile.appearance = option.rawValue
+                }
+            }
+            if themesAvailable {
+                segment("Themes", selected: themed) {
+                    themesExpanded.toggle()
+                }
+            }
+        }
+        .padding(2)
+        .background(Color(UIColor.tertiarySystemFill),
+                    in: RoundedRectangle(cornerRadius: 9))
+    }
+
+    private func segment(
+        _ label: String, selected: Bool, action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.subheadline.weight(selected ? .medium : .regular))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+                .background(selected ? Color.simplyCard : .clear,
+                            in: RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.plain)
+    }
+
     private var donationCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label("Support Simply Pure", systemImage: "heart.fill")
@@ -329,6 +419,30 @@ struct ProfileView: View {
             .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         guard let url = URL(string: "mailto:hello@studio86.dev?subject=\(subject)") else { return }
         UIApplication.shared.open(url)
+    }
+}
+
+/// One tappable theme tile: the preset's paper with its accent dot.
+private struct ThemeSwatch: View {
+    let preset: ThemePreset
+    let selected: Bool
+    let onTap: () -> Void
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Button(action: onTap) {
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(preset.paper)
+                    .frame(width: 64, height: 64)
+                    .overlay(Circle().fill(preset.accent).frame(width: 26, height: 26))
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(
+                        selected ? Color.simplyLink : Color.simplyHairline,
+                        lineWidth: selected ? 3 : 1))
+            }
+            .buttonStyle(.plain)
+            Text(preset.label)
+                .font(.caption2)
+        }
     }
 }
 

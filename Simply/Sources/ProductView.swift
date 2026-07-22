@@ -8,7 +8,12 @@ extension Color {
     static let riskModerate = Color(red: 0xF2 / 255, green: 0xA9 / 255, blue: 0x3B / 255)
     static let riskHigh = Color(red: 0xE6 / 255, green: 0x3E / 255, blue: 0x32 / 255)
     static let scoreGood = Color(red: 0x7C / 255, green: 0xB9 / 255, blue: 0x2C / 255)
-    static let simplyYellow = Color(red: 0xFD / 255, green: 0xE8 / 255, blue: 0x98 / 255)
+    /// Accent-container tone: brand yellow, or the active theme preset's
+    /// accent container when one is selected.
+    static var simplyYellow: Color {
+        presetFor(ProfileStore.shared.appearance)?.accentContainer
+            ?? Color(red: 0xFD / 255, green: 0xE8 / 255, blue: 0x98 / 255)
+    }
 }
 
 extension AdditiveRisk {
@@ -67,6 +72,11 @@ struct ProductView: View {
                 ProgressView()
             case .notFound:
                 VStack(spacing: 8) {
+                    Image("mascot_surprised")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 96, height: 96)
+                        .padding(.bottom, 8)
                     Text("Not in any database yet")
                         .font(.headline)
                         .multilineTextAlignment(.center)
@@ -157,11 +167,18 @@ struct ProductView: View {
         case .found(let product, let score):
             perServing = product.servingQuantity != nil
             state = .loaded(product, score)
-            // Only food carries the US Bioengineered Food disclosure, and
-            // only ask while the database has no answer yet.
-            bioShowAsk = product.kind == .food &&
+            // Only food carries the US Bioengineered Food disclosure, only
+            // ask while the database has no answer yet, and only ask people
+            // who opted into crowdsourcing at all.
+            bioShowAsk = CrowdRepository.shared.enabled &&
+                product.kind == .food &&
                 product.bioengineered == nil &&
                 !BioAnswers.answered(barcode)
+            // A fresh scan is exactly what the paired device wants to hear
+            // about; the engine throttles to once a minute.
+            if SyncEngine.shared.paired {
+                Task { await SyncEngine.shared.syncNow() }
+            }
             if CrowdRepository.shared.enabled {
                 crowdShowAsk = !CrowdRepository.shared.answered(barcode)
                 crowdSignal = await CrowdRepository.shared.signal(barcode)
@@ -191,8 +208,11 @@ struct ProductView: View {
 
                 if !hits.isEmpty { preferenceBanner(hits) }
                 if crowdSignal != nil || crowdShowAsk { crowdCard }
+                // One question at a time: the buy question leads, the
+                // bioengineered label question takes its place once that
+                // is answered or absent. Same rule as Android.
                 if product.kind == .food,
-                   bioShowAsk || bioJustAnswered || product.bioengineered != nil {
+                   (bioShowAsk && !crowdShowAsk) || bioJustAnswered || product.bioengineered != nil {
                     bioCard(product)
                 }
                 if score.total == nil || score.isPartial { missingDataCard(score) }

@@ -805,6 +805,16 @@ final class HistoryStore: ObservableObject {
         }
     }
 
+    /// Sync merge: inserts or replaces the record for its barcode and
+    /// keeps the list sorted newest first. Callers decide which copy
+    /// wins; this just stores what it is given.
+    func upsert(_ record: ScanRecord) {
+        records.removeAll { $0.barcode == record.barcode }
+        records.append(record)
+        records.sort { $0.scannedAt > $1.scannedAt }
+        persist()
+    }
+
     func delete(barcode: String) {
         records.removeAll { $0.barcode == barcode }
         persist()

@@ -122,15 +122,21 @@ struct HomeView: View {
             ScrollView {
                 Group {
                     if recent.isEmpty {
-                        Text("Scan your first product to get started.")
-                            .font(.body)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(20)
-                            .background(Color.simplyCard,
-                                        in: RoundedRectangle(cornerRadius: 16))
-                            .padding(.top, 8)
-                            .padding(.horizontal, 20)
+                        HStack(spacing: 16) {
+                            Image("mascot_waving")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 72, height: 72)
+                            Text("Scan your first product to get started.")
+                                .font(.body)
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(20)
+                        .background(Color.simplyCard,
+                                    in: RoundedRectangle(cornerRadius: 16))
+                        .padding(.top, 8)
+                        .padding(.horizontal, 20)
                     } else {
                         VStack(spacing: 10) {
                             ForEach(recent) { record in
@@ -154,6 +160,13 @@ struct HomeView: View {
         .navigationTitle("Simply Pure")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { greeting = Self.nextGreeting() }
+        // Same hook as Android's HomeScreen: opportunistic sync on every
+        // visit, throttled inside the engine to once a minute.
+        .task {
+            if SyncEngine.shared.paired {
+                await SyncEngine.shared.syncNow()
+            }
+        }
     }
 
     private func recentCard(_ record: ScanRecord) -> some View {

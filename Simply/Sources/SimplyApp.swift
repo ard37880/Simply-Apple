@@ -75,8 +75,10 @@ struct RootView: View {
 
     var body: some View {
         content
-            .tint(.riskNone)
-            .preferredColorScheme(Appearance.from(profile.appearance).colorScheme)
+            // A theme preset recolors the global tint along with the
+            // surfaces; scores and risk dots keep their own colors.
+            .tint(presetFor(profile.appearance)?.accent ?? .riskNone)
+            .preferredColorScheme(Appearance.colorScheme(for: profile.appearance))
     }
 
     @ViewBuilder

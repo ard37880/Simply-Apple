@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "mascot_surprised.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

@@ -16,7 +16,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.studio86.simply
         MARKETING_VERSION: "1.9"
-        CURRENT_PROJECT_VERSION: 33
+        CURRENT_PROJECT_VERSION: 34
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_NSCameraUsageDescription: "Simply Pure uses the camera to scan product barcodes and label photos."
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Simply Pure adds a coarse city-level tag to store reports you submit, so store availability can roll out by region."
