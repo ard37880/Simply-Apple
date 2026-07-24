@@ -130,7 +130,9 @@ struct ProductView: View {
         .navigationTitle("Product")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
+            // Share sits on the leading side, away from Scan next: side
+            // by side the two were getting mistaken for each other.
+            ToolbarItem(placement: .topBarLeading) {
                 if case .loaded(let product, let score) = state,
                    score.displayTotal != nil {
                     Button {
@@ -142,6 +144,8 @@ struct ProductView: View {
                     }
                     .accessibilityLabel("Share score card")
                 }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button("Scan next") { onScanNext() }
             }
         }
@@ -252,7 +256,11 @@ struct ProductView: View {
                 // bioengineered label question takes its place once that
                 // is answered or absent. The card itself renders for every
                 // food product so an unchecked one says so. Same as Android.
-                if product.kind == .food {
+                // Mis-filed household items reach us as food with no
+                // nutrition and no ingredients; asking about a food
+                // disclosure there is noise. Data first, questions second.
+                if product.kind == .food,
+                   product.nutriments != nil || product.ingredientsText != nil {
                     bioCard(product)
                 }
                 if score.total == nil || score.isPartial { missingDataCard(score) }

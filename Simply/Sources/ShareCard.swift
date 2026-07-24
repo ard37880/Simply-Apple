@@ -54,39 +54,39 @@ enum ShareCard {
 
             // Product photo, when one loads in time.
             if let photo {
-                let side: CGFloat = 360
+                let side: CGFloat = 260
                 let dst = CGRect(x: (width - side) / 2, y: y, width: side, height: side)
                 ctx.saveGState()
                 UIBezierPath(roundedRect: dst, cornerRadius: 36).addClip()
                 drawCenterCropped(photo, in: dst)
                 ctx.restoreGState()
-                y += side + 56
+                y += side + 44
             } else {
                 y += 40
             }
 
             // Name and brand, centered, name on up to two lines.
-            let nameFont = UIFont.boldSystemFont(ofSize: 60)
+            let nameFont = UIFont.boldSystemFont(ofSize: 56)
             for line in wrap(product.name, font: nameFont, maxWidth: card.width - 120, maxLines: 2) {
-                drawCentered(line, font: nameFont, color: ink, baselineY: y + 52)
-                y += 74
+                drawCentered(line, font: nameFont, color: ink, baselineY: y + 50)
+                y += 70
             }
             if let brand = product.brand,
                !brand.trimmingCharacters(in: .whitespaces).isEmpty {
                 let brandFont = UIFont.systemFont(ofSize: 42)
                 drawCentered(ellipsize(brand, font: brandFont, maxWidth: card.width - 120),
                              font: brandFont, color: gray, baselineY: y + 40)
-                y += 66
+                y += 58
             }
-            y += 30
+            y += 22
 
             // Score ring with the mascot alongside.
-            let ringSize: CGFloat = 430
+            let ringSize: CGFloat = 380
             let mascotName = total >= 75 ? "mascot_celebrating"
                 : total >= 50 ? "mascot_waving"
                 : "mascot_surprised"
             let mascot = UIImage(named: mascotName)
-            let mascotW: CGFloat = 230
+            let mascotW: CGFloat = 210
             let groupW = ringSize + 40 + mascotW
             let ringLeft = (width - groupW) / 2
             let ringRect = CGRect(x: ringLeft, y: y, width: ringSize, height: ringSize)
@@ -118,12 +118,12 @@ enum ShareCard {
                 mascot.draw(in: CGRect(x: ringRect.maxX + 40, y: ringRect.maxY - mh,
                                        width: mascotW, height: mh))
             }
-            y += ringSize + 74
+            y += ringSize + 58
 
             // Band label under the ring, in the band color.
             drawCentered(score.displayLabel, font: .boldSystemFont(ofSize: 58),
                          color: bandColor, baselineY: y)
-            y += 54
+            y += 46
 
             // Honest note when the shown score is personalized.
             if let personalized = score.personalized, let standard = score.total,
@@ -134,9 +134,9 @@ enum ShareCard {
 
             // Footer pinned to the card bottom.
             drawCentered("Scanned with Simply Pure", font: .boldSystemFont(ofSize: 40),
-                         color: ink, baselineY: card.maxY - 130)
+                         color: ink, baselineY: card.maxY - 108)
             drawCentered("simplypure.studio86.dev", font: .systemFont(ofSize: 38),
-                         color: UIColor(shareRGB: 0x1B8E3E), baselineY: card.maxY - 76)
+                         color: UIColor(shareRGB: 0x1B8E3E), baselineY: card.maxY - 56)
         }
     }
 
