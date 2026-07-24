@@ -19,6 +19,9 @@ struct SimplyApp: App {
                     await RulesUpdater.refresh()
                     if !Entitlements.shared.locked(.recallAlerts) {
                         await RecallChecker.checkAndNotify()
+                        // Same opt-in covers score-change alerts; the
+                        // checker throttles itself.
+                        await ScoreChangeChecker.checkAndNotify()
                     }
                 }
         }

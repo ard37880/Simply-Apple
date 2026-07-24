@@ -111,16 +111,31 @@ enum NutriScore {
     static func simplyPoints(
         _ n: Nutriments,
         sweetener: Bool,
-        weights w: NutritionWeights = .neutral
+        weights w: NutritionWeights = .neutral,
+        isBeverage: Bool = false
     ) -> Int? {
         guard let sugars = n.sugars, let satFat = n.saturatedFat,
               let sodiumMg = (n.sodium ?? n.salt.map { $0 / 2.5 }).map({ $0 * 1000 })
         else { return nil }
+        // Calories are a deduction input like the other three: when absent,
+        // the axis is unknown rather than quietly scored as calorie-free.
+        // Beverages are the one exception; many carry no kcal field yet
+        // sugar alone tells the story, so water isn't punished for a
+        // missing zero.
+        guard let kcal = n.energyKcal ?? (isBeverage ? 0.0 : Double?.none)
+        else { return nil }
         var pts = 60.0
-        pts -= w.sugar * Double(sugars <= 5 ? 0 : sugars <= 13.5 ? 6 : sugars <= 22.5 ? 12 : 18)
+        if isBeverage {
+            // Per 100 ml, a drink concentrates its sugar dose: Nutri-Score
+            // grades beverages on roughly a third of the solid-food scale.
+            pts -= w.sugar * Double(sugars <= 1.5 ? 0 : sugars <= 4.5 ? 6 : sugars <= 9 ? 12 : 18)
+            pts -= w.calories * Double(kcal <= 18 ? 0 : kcal <= 36 ? 3 : kcal <= 54 ? 6 : 9)
+        } else {
+            pts -= w.sugar * Double(sugars <= 5 ? 0 : sugars <= 13.5 ? 6 : sugars <= 22.5 ? 12 : 18)
+            pts -= w.calories * Double(kcal <= 160 ? 0 : kcal <= 330 ? 3 : kcal <= 500 ? 6 : 9)
+        }
         pts -= w.satFat * Double(satFat <= 1.5 ? 0 : satFat <= 3.25 ? 5 : satFat <= 5 ? 10 : 15)
         pts -= w.sodium * Double(sodiumMg <= 120 ? 0 : sodiumMg <= 360 ? 5 : sodiumMg <= 600 ? 10 : 15)
-        if let kcal = n.energyKcal { pts -= w.calories * Double(kcal <= 160 ? 0 : kcal <= 330 ? 3 : kcal <= 500 ? 6 : 9) }
         if let fiber = n.fiber { pts += w.fiber * Double(fiber >= 3.5 ? 4 : fiber >= 1.5 ? 2 : 0) }
         if let protein = n.proteins { pts += w.protein * Double(protein >= 8 ? 4 : protein >= 4 ? 2 : 0) }
         if sweetener { pts -= w.sweetener * 6 }
@@ -210,7 +225,8 @@ enum ScoreEngine {
         let sweetenerEs: Set<String> = ["E950","E951","E952","E954","E955","E961","E962","E969"]
         let sweetener = product.additives.contains { sweetenerEs.contains($0.eNumber.uppercased()) }
         let nutritionPts = product.nutriments.flatMap {
-            NutriScore.simplyPoints($0, sweetener: sweetener)
+            NutriScore.simplyPoints($0, sweetener: sweetener,
+                                    isBeverage: product.isBeverage)
         }
         let nutritionKnown = nutritionPts != nil
         let nutritionPoints = nutritionPts ?? 0
@@ -282,7 +298,8 @@ enum ScoreEngine {
         let weights = NutritionWeights.forDiets(diets)
         if !weights.isNeutral, nutritionKnown, let standard = total,
            let pNutrition = product.nutriments.flatMap({
-               NutriScore.simplyPoints($0, sweetener: sweetener, weights: weights)
+               NutriScore.simplyPoints($0, sweetener: sweetener, weights: weights,
+                                       isBeverage: product.isBeverage)
            }) {
             var pEarned = pNutrition
             if additivesKnown { pEarned += additivePoints }
@@ -315,8 +332,24 @@ enum ScoreEngine {
         )
     }
 
+    /// Cosmetics, pet food and household products are scored purely on
+    /// ingredient safety (there is no nutrition axis). EU-banned
+    /// ingredients cap the score, same as food.
     private static func scoreByIngredients(_ product: Product) -> ScoreResult {
-        let known = !(product.ingredientsText ?? "").isEmpty
+        let matches = product.additives.count + product.flaggedIngredients.count +
+            product.unratedAdditives.count
+        // A long ingredient list where the matcher recognized nothing at
+        // all means the database doesn't cover this product's chemistry
+        // (foreign INCI spellings, OCR noise) — that's "couldn't assess",
+        // never a confident clean score.
+        let ingredientsText = product.ingredientsText ?? ""
+        let tokenCount = ingredientsText
+            .split(whereSeparator: { ",;·•".contains($0) })
+            .filter { $0.contains(where: { !$0.isWhitespace }) }
+            .count
+        let known = !ingredientsText
+            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !(tokenCount >= 8 && matches == 0)
         let allRisks = product.additives.map(\.effectiveRisk) +
             product.flaggedIngredients.map(\.risk)
         let worstRisk = allRisks.max()
@@ -336,6 +369,9 @@ enum ScoreEngine {
         if var t = total {
             let riskyCount = allRisks.filter { $0 >= .moderate }.count
             if riskyCount > 1 { t -= 4 * (riskyCount - 1) }
+            // Positive-list principle, same as food: a declared but
+            // unidentifiable additive never leaves the top tier intact.
+            if !product.unratedAdditives.isEmpty { t = min(t, 72) }
             if !banned.isEmpty {
                 cappedByBanned = t > bannedCap
                 t = min(t, bannedCap)

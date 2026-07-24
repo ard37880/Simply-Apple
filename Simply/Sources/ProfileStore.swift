@@ -130,6 +130,10 @@ enum PreferenceChecker {
         var hits: [PreferenceHit] = []
         let text = (product.ingredientsText ?? "").lowercased()
 
+        // Allergens: declared tags, then traces, then keyword fallback.
+        // The fallback runs per allergen: partially tagged records are
+        // common (a community member tagged milk, nobody tagged sesame),
+        // so one present tag must not silence the text check for the rest.
         for key in profile.allergens {
             guard let option = ProfileStore.allergenOptions.first(where: { $0.key == key })
             else { continue }
@@ -137,7 +141,7 @@ enum PreferenceChecker {
                 hits.append(.init(label: "Contains \(option.label.lowercased())", severity: .contains))
             } else if product.tracesTags.contains(option.offTag) {
                 hits.append(.init(label: "May contain traces of \(option.label.lowercased())", severity: .traces))
-            } else if product.allergensTags.isEmpty, !text.isEmpty,
+            } else if !text.isEmpty,
                       keywordLikely(key, text: text, labelsTags: product.labelsTags) {
                 hits.append(.init(label: "Likely contains \(option.label.lowercased())", severity: .likely))
             }
@@ -296,16 +300,20 @@ enum PreferenceChecker {
         return hits.filter { seen.insert($0.label).inserted }
     }
 
-    /// Keyword fallback for one allergen. Same rules as Android: gluten
-    /// gets whole-word matching (plain substrings flagged buckwheat and
-    /// maltodextrin) and is skipped entirely when the product carries a
-    /// gluten-free label.
+    /// Keyword fallback for one allergen. Gluten gets whole-word matching
+    /// (plain substrings flagged buckwheat and maltodextrin); a gluten-free
+    /// label suppresses only the bare-"flour" guess, never an explicit
+    /// gluten grain in the text. Same rules as Android.
     private static func keywordLikely(_ key: String, text: String, labelsTags: [String]) -> Bool {
         guard key == "gluten" else {
             return (allergenKeywords[key] ?? []).contains(where: text.contains)
         }
-        if labelsTags.contains(where: { glutenFreeLabels.contains($0) }) { return false }
+        // An explicit gluten grain printed in the ingredient list outranks
+        // a community-applied gluten-free label; mistagged labels are a
+        // celiac hazard. The label only suppresses the vaguer bare-"flour"
+        // heuristic below.
         if text.range(of: glutenWords, options: .regularExpression) != nil { return true }
+        if labelsTags.contains(where: { glutenFreeLabels.contains($0) }) { return false }
         // Unqualified "flour" means wheat flour on a US label, but rice
         // flour, almond flour etc. are gluten-free.
         guard let regex = try? NSRegularExpression(pattern: "\\b(\\w*)\\s*flour\\b") else { return false }
@@ -337,10 +345,22 @@ enum PreferenceChecker {
     // bioengineered (corn, soy, canola, sugar beet, cottonseed). Note the
     // US disclosure standard exempts highly refined ingredients, so "no
     // disclosure" does not mean "no bioengineered crops" — hence "likely".
+    // "Modified food starch" on a US label is usually corn-derived, so it
+    // counts; "enriched" does not (enrichment adds vitamins to wheat flour,
+    // and no commercially grown US wheat is bioengineered).
     private static let beCropWords =
         "\\b(corn syrup|corn starch|cornstarch|corn oil|corn flour|corn meal|cornmeal|" +
+        "modified food starch|modified starch|" +
         "dextrose|maltodextrin|soybean|soy protein|soy flour|soy lecithin|" +
         "canola|cottonseed|sugar beet|beet sugar)\\b"
+
+    /// True when the ingredient list already names a bioengineered-crop
+    /// derivative: the avoid check flags these on its own, so the product
+    /// page skips the disclosure question entirely.
+    static func likelyBioengineered(_ product: Product) -> Bool {
+        (product.ingredientsText ?? "").lowercased()
+            .range(of: beCropWords, options: .regularExpression) != nil
+    }
 
     private static let allergenKeywords: [String: [String]] = [
         "milk": ["milk", "whey", "casein", "butter", "cream", "cheese", "lactose"],

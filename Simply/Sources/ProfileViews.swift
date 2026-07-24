@@ -224,10 +224,11 @@ struct ProfileView: View {
                     .font(.headline)
                     .padding(.top, 24)
                 PermissionToggleRow(
-                    title: "Recall alerts",
+                    title: "Alerts about products you scanned",
                     description: "Notifies you if a product you scanned is recalled "
-                        + "(US FDA). Your scan list is sent to the Simply Pure server to "
-                        + "check, nothing else.",
+                        + "(US FDA) or its score changes after a data or safety-rules "
+                        + "update. Your scan list is sent to the Simply Pure server to "
+                        + "check for recalls, nothing else.",
                     isOn: Binding(
                         get: { profile.recallAlerts },
                         set: { on in

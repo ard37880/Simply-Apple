@@ -31,11 +31,24 @@ final class CrowdRepository {
 
     private static let answeredKey = "crowd.answered"
 
+    private static func answerKey(_ barcode: String) -> String { "crowd.answer:\(barcode)" }
+    private static func regionKey(_ barcode: String) -> String { "crowd.region:\(barcode)" }
+
     var enabled: Bool { ProfileStore.shared.crowdsourcing }
 
     func answered(_ barcode: String) -> Bool {
         (UserDefaults.standard.stringArray(forKey: Self.answeredKey) ?? [])
             .contains(barcode)
+    }
+
+    /// The answer this device gave, when known. Answers from before the
+    /// change-your-mind feature stored only the asked flag, so they return
+    /// nil and cannot be changed (retracting an unknown answer would skew
+    /// the anonymous counts).
+    func answerOf(_ barcode: String) -> Bool? {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: Self.answerKey(barcode)) != nil else { return nil }
+        return defaults.bool(forKey: Self.answerKey(barcode))
     }
 
     func answer(_ barcode: String, bought: Bool) async {
@@ -44,11 +57,50 @@ final class CrowdRepository {
         if !done.contains(barcode) { done.append(barcode) }
         UserDefaults.standard.set(done, forKey: Self.answeredKey)
 
-        var payload: [String: Any] = ["bought": bought]
-        if bought, ProfileStore.shared.locationTagging,
-           let region = await LocationTagger.shared.cityState() {
-            payload["region"] = region
+        var region: String?
+        if bought, ProfileStore.shared.locationTagging {
+            region = await LocationTagger.shared.cityState()
         }
+        remember(barcode, bought: bought, region: region)
+        await post(barcode, bought: bought, region: region,
+                   previous: nil, previousRegion: nil)
+    }
+
+    /// A changed mind: retracts the stored answer on the server (counts
+    /// stay anonymous, so the client reports what it is retracting) and
+    /// records the new one.
+    func changeAnswer(_ barcode: String, bought: Bool) async {
+        guard let previous = answerOf(barcode), previous != bought else { return }
+        let previousRegion = UserDefaults.standard.string(forKey: Self.regionKey(barcode))
+        var region: String?
+        if bought, ProfileStore.shared.locationTagging {
+            region = await LocationTagger.shared.cityState()
+        }
+        remember(barcode, bought: bought, region: region)
+        await post(barcode, bought: bought, region: region,
+                   previous: previous, previousRegion: previousRegion)
+    }
+
+    private func remember(_ barcode: String, bought: Bool, region: String?) {
+        let defaults = UserDefaults.standard
+        defaults.set(bought, forKey: Self.answerKey(barcode))
+        if let region {
+            defaults.set(region, forKey: Self.regionKey(barcode))
+        } else {
+            defaults.removeObject(forKey: Self.regionKey(barcode))
+        }
+    }
+
+    private func post(
+        _ barcode: String, bought: Bool, region: String?,
+        previous: Bool?, previousRegion: String?
+    ) async {
+        var payload: [String: Any] = ["bought": bought]
+        if let region { payload["region"] = region }
+        // The retraction keys only travel when set, matching the Android
+        // client (kotlinx omits nulls).
+        if let previous { payload["previous"] = previous }
+        if let previousRegion { payload["previousRegion"] = previousRegion }
         var request = URLRequest(
             url: ProductRepository.serverBase.appendingPathComponent("api/v2/crowd/\(barcode)"))
         request.httpMethod = "POST"

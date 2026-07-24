@@ -50,10 +50,11 @@ func extractIngredients(from raw: String) -> String {
 // unit carries its grams divisor for the save-time conversion.
 enum NutrientUnit: String {
     case kcal, g, mg, mcg
+    case gOrMl = "g or ml"
 
     var perGram: Double {
         switch self {
-        case .kcal, .g: return 1
+        case .kcal, .g, .gOrMl: return 1
         case .mg: return 1_000
         case .mcg: return 1_000_000
         }
@@ -74,7 +75,9 @@ struct NutrientField {
 }
 
 let nutrientFields: [NutrientField] = [
-    NutrientField(key: "serving", label: "Serving size", unit: .g, offKey: nil, core: true),
+    // Serving accepts grams or milliliters (1 ml counts as 1 g); labels
+    // that give only a count ("2 cookies") need the mass typed in.
+    NutrientField(key: "serving", label: "Serving size", unit: .gOrMl, offKey: nil, core: true),
     NutrientField(key: "calories", label: "Calories", unit: .kcal, offKey: "energy-kcal_100g", core: true),
     NutrientField(key: "totalfat", label: "Total fat", unit: .g, offKey: "fat_100g", core: true),
     NutrientField(key: "satfat", label: "Saturated fat", unit: .g, offKey: "saturated-fat_100g", core: true),
@@ -155,8 +158,8 @@ func parseNutritionFacts(from raw: String) -> [String: String] {
         grab(key, #"\b"# + name + #"\D{0,10}(\d+(?:\.\d+)?)\s*"# + u)
     }
     // "Serving size 2/3 cup (55g)" — grams in parentheses first, then bare
-    grab("serving", #"serving size[^(]{0,40}\((\d+(?:\.\d+)?)\s*g\)"#)
-    grab("serving", #"serving size\D{0,20}(\d+(?:\.\d+)?)\s*g"#)
+    grab("serving", #"serving size[^(]{0,40}\((\d+(?:\.\d+)?)\s*(?:g|ml)\)"#)
+    grab("serving", #"serving size\D{0,20}(\d+(?:\.\d+)?)\s*(?:g|ml)"#)
     grab("calories", #"\bcalories\D{0,10}(\d+(?:\.\d+)?)"#)
     nutrient("totalfat", "total fat", "g")
     nutrient("satfat", "saturated fat", "g")
@@ -221,6 +224,10 @@ func recognizeText(in image: UIImage) async -> String {
         }
         request.recognitionLevel = .accurate
         request.recognitionLanguages = ["en-US"]
+        // The additive lexicon steers Vision toward real label words, so
+        // "carrageenan" wins over near-miss dictionary words.
+        request.usesLanguageCorrection = true
+        request.customWords = Array(AdditiveRepository.shared.lexiconWords)
         do {
             try VNImageRequestHandler(cgImage: cgImage).perform([request])
         } catch {
@@ -259,22 +266,36 @@ struct SubmitView: View {
     // recategorizing immediately stops asking for nutrition facts.
     private var effectiveKind: ProductKind { chosenKind }
 
+    // Bioengineered disclosure correction: nil = not checked, "yes"
+    // needs the disclosure photo as proof, "no" is a bare statement
+    // (absence can't be photographed).
+    @State private var bioChoice: String?
+
     // Nutrition facts only apply to food; other kinds skip the section
     // and the nutrition-label photo slot.
     private var slots: [(String, String)] {
-        effectiveKind == .food ? Self.slots : Self.slots.filter { $0.0 != "nutrition" }
+        var list = effectiveKind == .food
+            ? Self.slots
+            : Self.slots.filter { $0.0 != "nutrition" }
+        if effectiveKind == .food, bioChoice == "yes" {
+            list.append(("bioengineered", "Bioengineered disclosure"))
+        }
+        return list
     }
 
     @State private var captured: [String: UIImage] = [:]
     @State private var pickingField: String?
     @State private var ocrText = ""
     @State private var ocrRan = false
+    @State private var ocrFixes: [OcrCorrector.Correction] = []
     @State private var store = ""
     @State private var productName = ""
     @State private var brandName = ""
     @State private var storeAsk = false
     @State private var storeAsked = false
     @State private var nutrition: [String: String] = [:]
+    @State private var servingUnit = "g"
+    @State private var servingWeight = ""
     @State private var nutritionOcrRan = false
     @State private var nutritionOcrFound = false
     // Extended fields currently shown (OCR hit or user-added via picker)
@@ -286,6 +307,7 @@ struct SubmitView: View {
     private var hasWork: Bool {
         !captured.isEmpty
             || !ocrText.trimmingCharacters(in: .whitespaces).isEmpty
+            || bioChoice != nil
             || !store.trimmingCharacters(in: .whitespaces).isEmpty
             || !productName.trimmingCharacters(in: .whitespaces).isEmpty
             || !brandName.trimmingCharacters(in: .whitespaces).isEmpty
@@ -341,6 +363,8 @@ struct SubmitView: View {
                                         others = []
                                         nutritionOcrRan = false
                                         nutritionOcrFound = false
+                                        captured.removeValue(forKey: "bioengineered")
+                                        bioChoice = nil
                                     }
                                 } label: {
                                     Text(label)
@@ -364,6 +388,42 @@ struct SubmitView: View {
                         slotCard(field: field, label: label)
                     }
 
+                    if effectiveKind == .food {
+                        Text("Bioengineered disclosure")
+                            .font(.subheadline.weight(.bold))
+                        Text("Does the package say Bioengineered food or Contains a bioengineered food ingredient? It is usually near the ingredient list. A yes takes a photo of the disclosure as proof.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        FlowLayout(spacing: 8) {
+                            ForEach([
+                                (String?.none, "Not checked"),
+                                ("yes", "Shows disclosure"),
+                                ("no", "No disclosure"),
+                            ] as [(String?, String)], id: \.1) { value, label in
+                                Button {
+                                    bioChoice = value
+                                    if value != "yes" {
+                                        captured.removeValue(forKey: "bioengineered")
+                                    }
+                                    resultMessage = nil
+                                } label: {
+                                    Text(label)
+                                        .font(.subheadline)
+                                        .padding(.horizontal, 12).padding(.vertical, 6)
+                                        .background(
+                                            bioChoice == value
+                                                ? Color.riskNone.opacity(0.18)
+                                                : Color.simplyCard,
+                                            in: Capsule())
+                                        .overlay(Capsule().stroke(
+                                            bioChoice == value ? Color.riskNone : .clear,
+                                            lineWidth: 1.5))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+
                     if ocrRan {
                         Text(ocrText.isEmpty
                             ? "Couldn't read text from the ingredient photo. You can type the list manually."
@@ -374,6 +434,14 @@ struct SubmitView: View {
                             .padding(6)
                             .overlay(RoundedRectangle(cornerRadius: 8)
                                 .stroke(.quaternary))
+                        if !ocrFixes.isEmpty {
+                            Text("Auto-corrected from the photo: "
+                                + ocrFixes.map { "\($0.from) to \($0.to)" }
+                                    .joined(separator: ", ")
+                                + ". Double-check these against the label.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
 
                     // The nutrition form only appears once a nutrition-label
@@ -440,7 +508,12 @@ struct SubmitView: View {
                     captured[field] = image
                     if field == "ingredients" {
                         Task {
-                            ocrText = extractIngredients(from: await recognizeText(in: image))
+                            // Lexicon pass snaps common OCR misreads back to
+                            // real label words before the user proofreads.
+                            let (corrected, fixes) = OcrCorrector.shared.correctWithReport(
+                                extractIngredients(from: await recognizeText(in: image)))
+                            ocrText = corrected
+                            ocrFixes = fixes
                             ocrRan = true
                         }
                     } else if field == "nutrition" {
@@ -495,7 +568,43 @@ struct SubmitView: View {
                 ? "Here's what the scan read from the label. Please check it against the package and fix any mistakes, then tap Save:"
                 : "Couldn't read values from the nutrition photo. You can enter them manually.")
                 .font(.subheadline)
-            nutritionField(nutrientFields.first { $0.offKey == nil }!)
+            // Serving size: a number plus the unit as printed on the
+            // label. Pieces ("3 crackers", "1 bottle") also ask the
+            // weight of that many, which drives the per-100g math.
+            HStack(alignment: .bottom, spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Serving size *")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("", text: Binding(
+                        get: { nutrition["serving"] ?? "" },
+                        set: { nutrition["serving"] = $0; resultMessage = nil }
+                    ))
+                    .keyboardType(.decimalPad)
+                    .textFieldStyle(.roundedBorder)
+                }
+                Menu(servingUnit) {
+                    ForEach(["g", "ml", "oz", "fl oz", "pieces"], id: \.self) { unit in
+                        Button(unit) {
+                            servingUnit = unit
+                            resultMessage = nil
+                        }
+                    }
+                }
+            }
+            if servingUnit == "pieces" {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Weight of that many (g or ml) *")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("printed next to the serving, like (30 g)", text: Binding(
+                        get: { servingWeight },
+                        set: { servingWeight = $0; resultMessage = nil }
+                    ))
+                    .keyboardType(.decimalPad)
+                    .textFieldStyle(.roundedBorder)
+                }
+            }
             ForEach(shownNutrientRows, id: \.first!.key) { row in
                 HStack(alignment: .bottom, spacing: 12) {
                     ForEach(row, id: \.key) { field in
@@ -606,7 +715,7 @@ struct SubmitView: View {
             if captured[field] != nil {
                 Button {
                     captured.removeValue(forKey: field)
-                    if field == "ingredients" { ocrText = ""; ocrRan = false }
+                    if field == "ingredients" { ocrText = ""; ocrRan = false; ocrFixes = [] }
                     if field == "nutrition" {
                         nutrition = [:]
                         extraVisible = []
@@ -639,6 +748,10 @@ struct SubmitView: View {
     }
 
     private func saveAll() {
+        if bioChoice == "yes", captured["bioengineered"] == nil {
+            resultMessage = "A shows-disclosure answer needs the photo of the disclosure. Take it and tap Save again."
+            return
+        }
         saving = true
         resultMessage = nil
         Task {
@@ -672,7 +785,27 @@ struct SubmitView: View {
                         .replacingOccurrences(of: ",", with: "."))
                 }
             }
-            let servingG = numField("serving").flatMap { $0 > 0 ? $0 : nil }
+            // The serving is a number plus a unit from the dropdown. Mass
+            // and volume convert straight to grams (1 ml counts as 1 g);
+            // "pieces" ("3 crackers", "1 bottle") also needs the weight of
+            // that many, or the math waits.
+            let servingValue = numField("serving").flatMap { $0 > 0 ? $0 : nil }
+            let servingWeightG = Double(servingWeight
+                .trimmingCharacters(in: .whitespaces)
+                .replacingOccurrences(of: ",", with: "."))
+                .flatMap { $0 > 0 ? $0 : nil }
+            let servingG: Double?
+            if servingValue == nil {
+                servingG = nil
+            } else if servingUnit == "g" || servingUnit == "ml" {
+                servingG = servingValue
+            } else if servingUnit == "oz" {
+                servingG = servingValue.map { $0 * 28.3495 }
+            } else if servingUnit == "fl oz" {
+                servingG = servingValue.map { $0 * 29.5735 }
+            } else {
+                servingG = servingWeightG // pieces
+            }
             let perServing: [(String, Double)] = nutrientFields.compactMap { field in
                 // OFF stores nutrients in grams; the label prints the
                 // field's unit (mg, mcg) — kcal stays kcal.
@@ -695,6 +828,24 @@ struct SubmitView: View {
                     ($0.0, roundPer100g($0.1 / servingG * 100))
                 })
             }
+            // A serving entered as a count ("1" for one cookie) instead of
+            // grams makes the per-100g math explode: nothing real holds
+            // more than 100 g of a nutrient per 100 g, or 950 kcal.
+            let servingLooksWrong = nutriments?.contains { key, value in
+                key.hasPrefix("energy-kcal") ? value > 950 : value > 100
+            } ?? false
+            if servingLooksWrong {
+                saving = false
+                let grams = servingG.map {
+                    $0 == $0.rounded(.down) ? "\(Int($0))" : "\($0)"
+                } ?? "?"
+                resultMessage = "Check the serving size: it reads as \(grams) g "
+                    + "per serving, which makes these numbers more than is "
+                    + "physically possible per 100 g. Use the weight from the "
+                    + "label, usually printed in parentheses next to the "
+                    + "household measure, like 3 crackers (30 g)."
+                return
+            }
             // Nutrients with no OFF key travel as one human-readable string
             let otherText = others.compactMap { other -> String? in
                 let name = other.name.trimmingCharacters(in: .whitespaces)
@@ -702,8 +853,20 @@ struct SubmitView: View {
                 guard !name.isEmpty, !amount.isEmpty else { return nil }
                 return "\(name): \(amount) \(other.unit) per serving"
             }.joined(separator: "; ")
-            let servingSizeText = servingG.map {
-                $0 == $0.rounded(.down) ? "\(Int($0)) g" : "\($0) g"
+            func fmt(_ v: Double) -> String {
+                v == v.rounded(.down) ? "\(Int(v))" : "\(v)"
+            }
+            let servingSizeText: String?
+            if let servingValue {
+                if servingUnit == "pieces", let servingG {
+                    servingSizeText = "\(fmt(servingValue)) pieces (\(fmt(servingG)) g)"
+                } else if servingUnit == "pieces" {
+                    servingSizeText = "\(fmt(servingValue)) pieces"
+                } else {
+                    servingSizeText = "\(fmt(servingValue)) \(servingUnit)"
+                }
+            } else {
+                servingSizeText = nil
             }
             var factsOk: Bool?
             // A category correction on an existing product stands on its
@@ -711,7 +874,7 @@ struct SubmitView: View {
             // reviewer has something to verify against.
             if !ingredients.isEmpty || !storeName.isEmpty || servingG != nil
                 || !otherText.isEmpty || !productNameText.isEmpty
-                || !brandText.isEmpty
+                || !brandText.isEmpty || bioChoice != nil
                 || (suggestedCategory != nil && (okPhotos > 0 || !unknownKind)) {
                 // Coarse "City, State" tag, only when a store is being
                 // reported and the user opted in.
@@ -729,7 +892,8 @@ struct SubmitView: View {
                     servingQuantity: servingG,
                     productName: productNameText.isEmpty ? nil : productNameText,
                     brands: brandText.isEmpty ? nil : brandText,
-                    suggestedCategory: suggestedCategory)
+                    suggestedCategory: suggestedCategory,
+                    bioengineered: bioChoice)
             }
             saving = false
             if !captured.isEmpty, okPhotos < captured.count {
@@ -737,7 +901,7 @@ struct SubmitView: View {
             } else if factsOk == false {
                 resultMessage = "Photos uploaded, but the product details didn't save. Tap Save again."
             } else if okPhotos == 0, factsOk == nil, nutritionSkipped {
-                resultMessage = "Nutrition facts need the serving size in grams. Add it and tap Save again."
+                resultMessage = "Nutrition facts need the serving size. For pieces, also add the weight of that many, printed on the label like (30 g). Then tap Save again."
             } else if okPhotos == 0, factsOk == nil {
                 resultMessage = "Nothing to save yet. Take a photo first."
             } else {
@@ -754,7 +918,7 @@ struct SubmitView: View {
                 }
                 resultMessage = "Saved \(parts.joined(separator: " + ")), thank you! Your submission will appear once it's reviewed."
                     + (nutritionSkipped
-                        ? " Nutrition facts weren't saved. Add the serving size in grams and tap Save again."
+                        ? " Nutrition facts weren't saved. Add the serving size (for pieces, also their weight) and tap Save again."
                         : "")
             }
         }

@@ -28,10 +28,15 @@ final class AdditiveRepository {
     private let byId: [String: Additive]
     // Normalized US label names (entry name, usName, synonyms) -> additive.
     private let byLabelName: [String: Additive]
+    /// Every word appearing in a known additive name, US label name, or
+    /// synonym: the OCR corrector's domain vocabulary.
+    let lexiconWords: Set<String>
 
     private init() {
         var map: [String: Additive] = [:]
         var labels: [String: Additive] = [:]
+        var words = Set<String>()
+        let wordRegex = try? NSRegularExpression(pattern: "[a-z]+")
         for entry in RiskDatabase.load("additives") {
             let additive = Additive(entry: entry)
             map[entry.id] = additive
@@ -41,10 +46,47 @@ final class AdditiveRepository {
             for name in names {
                 let key = Self.normalizeLabelName(name)
                 if key.count >= 3 && labels[key] == nil { labels[key] = additive }
+                if let wordRegex {
+                    let lowered = name.lowercased() as NSString
+                    for match in wordRegex.matches(
+                        in: lowered as String,
+                        range: NSRange(location: 0, length: lowered.length))
+                    where match.range.length >= 3 {
+                        words.insert(lowered.substring(with: match.range))
+                    }
+                }
             }
         }
         byId = map
         byLabelName = labels
+        lexiconWords = words
+    }
+
+    /// Tags plus text detection, merged. OFF's additive tags are often a
+    /// subset of what the label actually lists (the aspartame bug's second
+    /// form: one parsed tag used to silence the text scan entirely), so the
+    /// text scan always runs and the results union, deduplicated by id.
+    func detect(
+        _ tags: [String], ingredientsText: String?
+    ) -> (rated: [Additive], unrated: [UnratedAdditive]) {
+        let fromTags = resolve(tags)
+        let fromText = detectFromText(ingredientsText)
+        var seenRated = Set<String>()
+        let rated = (fromTags.rated + fromText.rated)
+            .filter { seenRated.insert($0.id).inserted }
+        var seenUnrated = Set<String>()
+        var unrated = (fromTags.unrated + fromText.unrated)
+            .filter { seenUnrated.insert($0.eNumber.lowercased()).inserted }
+        // The generic "Artificial color" placeholder is redundant once a
+        // real dye is identified from either source. Colors are E100-E199.
+        if rated.contains(where: {
+            $0.id.range(of: "^e1\\d{2}[a-z]?$", options: .regularExpression) != nil
+        }) {
+            unrated = unrated.filter {
+                !$0.eNumber.lowercased().contains("color")
+            }
+        }
+        return (rated, unrated)
     }
 
     /// Resolve OFF tags like "en:e150d" / "en:e322i" (variants fall back
@@ -53,26 +95,38 @@ final class AdditiveRepository {
         var rated: [String: Additive] = [:]
         var order: [String] = []
         var unrated: [UnratedAdditive] = []
+        var unratedSeen = Set<String>()
         for tag in tags {
             let code = tag.split(separator: ":").last.map(String.init)?.lowercased() ?? tag
-            let base = code.range(of: "^e\\d+[a-d]?", options: .regularExpression)
-                .map { String(code[$0]) }
-            if let hit = byId[code] ?? base.flatMap({ byId[$0] }) {
+            if let hit = lookUpCode(code) {
                 if rated[hit.id] == nil { order.append(hit.id) }
                 rated[hit.id] = hit
-            } else {
+            } else if unratedSeen.insert(code.uppercased()).inserted {
                 unrated.append(UnratedAdditive(eNumber: code.uppercased()))
             }
         }
         return (order.compactMap { rated[$0] }, unrated)
     }
 
+    /// The exact code, then the greedy base match, which keeps a trailing
+    /// letter ("e440a" stays "e440a", "e150div" resolves as "e150d"), then
+    /// the bare digits: when neither the exact code nor the base form is
+    /// rated, e440a falls back to e440.
+    private func lookUpCode(_ code: String) -> Additive? {
+        let base = code.range(of: "^e\\d+[a-d]?", options: .regularExpression)
+            .map { String(code[$0]) }
+        let digits = code.range(of: "^e\\d+", options: .regularExpression)
+            .map { String(code[$0]) }
+        return byId[code] ?? base.flatMap { byId[$0] } ?? digits.flatMap { byId[$0] }
+    }
+
     /// Fallback for records whose additive tags were never parsed upstream
     /// (common for US products, where the ingredient list is OCR'd but no
     /// tags are computed): match additive names from the raw ingredient
     /// text against the database's names, US label names and synonyms.
-    /// Same rules as Android. Only called when tag resolution produced
-    /// nothing, so a record with real tags is never double-counted.
+    /// Same rules as Android. Also runs alongside tag resolution via
+    /// detect(); the union deduplicates by id, so a record with real tags
+    /// is never double-counted.
     func detectFromText(_ ingredientsText: String?) -> (rated: [Additive], unrated: [UnratedAdditive]) {
         guard let text = ingredientsText, !text.isEmpty else { return ([], []) }
         var rated: [String: Additive] = [:]
@@ -86,12 +140,12 @@ final class AdditiveRepository {
             .map { Self.normalizeLabelName(String($0)) }
             .filter { !$0.isEmpty }
         for token in tokens {
-            // "e211" / "ins 150d" written out in the ingredient list
-            if token.range(of: "^(e|ins) ?\\d{3,4}[a-z]?$", options: .regularExpression) != nil {
+            // "e211" / "ins 150d" written out in the ingredient list.
+            // Written E numbers include roman-numeral sub-variants (e150div).
+            if token.range(of: "^(e|ins) ?\\d{3,4}(?:[a-z]?[ivx]{0,4})$",
+                           options: .regularExpression) != nil {
                 let code = "e" + token.drop(while: { !$0.isNumber })
-                let base = code.range(of: "^e\\d+[a-d]?", options: .regularExpression)
-                    .map { String(code[$0]) }
-                if let hit = byId[code] ?? base.flatMap({ byId[$0] }) {
+                if let hit = lookUpCode(code) {
                     if rated[hit.id] == nil { order.append(hit.id); rated[hit.id] = hit }
                 } else if unrated[code] == nil {
                     unrated[code] = UnratedAdditive(eNumber: code.uppercased())
@@ -256,6 +310,7 @@ final class IngredientRiskRepository {
         if token.contains("siloxane") { return catalog["siloxane-generic"] }
         if token.hasPrefix("benzophenone") { return catalog["benzophenone"] }
         if token.contains("acrylate") { return catalog["acrylates-generic"] }
+        if token.contains("phosphate") && token.contains("tripoly") { return catalog["stpp"] }
         if token.contains("ethoxylate") { return catalog["ethoxylate-generic"] }
         return nil
     }
@@ -311,10 +366,14 @@ enum PetIngredientFlagger {
             note: "Synthetic fat preservative; possible carcinogen classification from animal studies.")),
         ("bht", .init(name: "BHT", risk: .moderate,
             note: "Synthetic fat preservative with mixed animal-study findings.")),
+        ("tbhq", .init(name: "TBHQ", risk: .moderate,
+            note: "Synthetic antioxidant; not on Japan's positive list and dosed strictly in the EU.")),
         ("corn syrup", .init(name: "Corn syrup", risk: .moderate,
             note: "Added sugar with no nutritional role in pet food; drives palatability and weight gain.")),
         ("animal by-product", .init(name: "Unnamed animal by-products", risk: .limited,
             note: "Catch-all term for unspecified animal parts; quality varies widely. Named sources are more transparent.")),
+        ("meat and bone meal", .init(name: "Meat and bone meal", risk: .limited,
+            note: "Rendered protein of unspecified origin; a transparency and quality marker rather than a direct hazard.")),
     ]
 
     static func detect(_ text: String?) -> [FlaggedIngredient] {
@@ -401,7 +460,19 @@ final class ProductRepository {
         case error(String)
     }
 
+    /// Simply server first (has our community overrides); OFF as fallback.
     func lookup(barcode: String) async -> Lookup {
+        await lookup(barcode: barcode, recordScan: true)
+    }
+
+    /// Same lookup, but never writes the scan-history record: for background
+    /// re-scoring (score-change alerts), which must not reorder recents or
+    /// refresh scan timestamps.
+    func peek(barcode: String) async -> Lookup {
+        await lookup(barcode: barcode, recordScan: false)
+    }
+
+    private func lookup(barcode: String, recordScan: Bool) async -> Lookup {
         let path = "api/v2/product/\(barcode)"
         var networkUnreachable = false
         var serverError: String?
@@ -419,7 +490,7 @@ final class ProductRepository {
                     if decoded.status == 1, decoded.product != nil {
                         ProductCache.shared.store(data, barcode: barcode)
                     }
-                    return found(decoded, barcode: barcode)
+                    return found(decoded, barcode: barcode, recordScan: recordScan)
                 }
                 if status == 404, base == Self.offBase {
                     // OFF answers unknown barcodes with 404 — authoritative.
@@ -435,19 +506,23 @@ final class ProductRepository {
         // No connectivity: fall back to the last good copy so previously
         // scanned products still work offline.
         if networkUnreachable, let cached = ProductCache.shared.load(barcode: barcode) {
-            return found(cached, barcode: barcode)
+            return found(cached, barcode: barcode, recordScan: recordScan)
         }
         return .error(serverError ?? "Network error")
     }
 
-    private func found(_ response: ProductResponse, barcode: String) -> Lookup {
+    private func found(
+        _ response: ProductResponse, barcode: String, recordScan: Bool = true
+    ) -> Lookup {
         guard response.status == 1, let dto = response.product else { return .notFound }
 
         let product = Self.toDomain(dto, barcode: barcode, sourceDb: response.simply_source)
         let score = ScoreEngine.score(product, diets: Entitlements.shared.activeDiets)
-        // History keeps the standard score so past scans stay stable when
-        // preferences change.
-        HistoryStore.shared.record(product: product, score: score)
+        // History stores the displayed score (personalized when preferences
+        // apply); see HistoryStore.record for why.
+        if recordScan {
+            HistoryStore.shared.record(product: product, score: score)
+        }
         return .found(product, score)
     }
 
@@ -521,6 +596,25 @@ final class ProductRepository {
             }
             .prefix(3)
             .map { $0 }
+    }
+
+    // Beverage-family categories (en: tags), for beverage nutrition
+    // thresholds. Keep in sync with the Android copy in ProductRepository.kt.
+    private static let beverageTag =
+        "beverage|soda|soft-drink|juice|energy-drink|sports-drink|"
+        + "iced-tea|colas|lemonade|drinks"
+
+    // Name keywords used ONLY when the record has no categories at all.
+    private static let beverageName =
+        "\\b(soda|cola|juice|lemonade|iced tea|sweet tea|"
+        + "energy drink|sports drink|soft drink|fruit punch|nectar)\\b"
+
+    static func isBeverage(categories: [String], name: String?) -> Bool {
+        if categories.contains(where: {
+            $0.range(of: beverageTag, options: .regularExpression) != nil
+        }) { return true }
+        return categories.isEmpty && (name ?? "").lowercased()
+            .range(of: beverageName, options: .regularExpression) != nil
     }
 
     // Department-level OFF categories too broad for like-for-like
@@ -691,15 +785,12 @@ final class ProductRepository {
             rated = IngredientRiskRepository.household.match(dto.ingredients_text)
             unrated = []
         default:
-            let resolved = AdditiveRepository.shared.resolve(dto.additives_tags ?? [])
-            if resolved.rated.isEmpty && resolved.unrated.isEmpty {
-                // Many US records carry ingredient text that upstream never
-                // parsed into additive tags; fall back to name matching so
-                // an aspartame soda can't score as additive-free.
-                (rated, unrated) = AdditiveRepository.shared.detectFromText(dto.ingredients_text)
-            } else {
-                (rated, unrated) = resolved
-            }
+            // Pet food additives are E-numbers, same as human food.
+            // Tags and text detection merge: OFF's parsed tags are often a
+            // subset of what the label lists, so one recognized tag must
+            // not silence the text scan (aspartame bug, second form).
+            (rated, unrated) = AdditiveRepository.shared.detect(
+                dto.additives_tags ?? [], ingredientsText: dto.ingredients_text)
         }
         let flagged: [FlaggedIngredient]
         switch sourceDb {
@@ -726,15 +817,27 @@ final class ProductRepository {
             unratedAdditives: unrated,
             flaggedIngredients: flagged,
             isOrganic: (dto.labels_tags ?? []).contains { organicLabels.contains($0) },
-            isBeverage: (dto.categories_tags ?? []).contains("en:beverages"),
+            // Any beverage-family category counts, and a record with no
+            // categories at all falls back to name keywords so a soda
+            // can't dodge beverage sugar thresholds by being untagged.
+            isBeverage: isBeverage(categories: dto.categories_tags ?? [],
+                                   name: dto.product_name),
             categoryTags: dto.categories_tags ?? [],
             labelsTags: dto.labels_tags ?? [],
             allergensTags: dto.allergens_tags ?? [],
             tracesTags: dto.traces_tags ?? [],
             ingredientsAnalysisTags: dto.ingredients_analysis_tags ?? [],
             ingredientsText: dto.ingredients_text?.isEmpty == false ? dto.ingredients_text : nil,
-            servingSize: dto.serving_size,
-            servingQuantity: dto.serving_quantity.flatMap { $0 > 0 ? $0 : nil },
+            // Community records sometimes stutter ("3/4 cup (28 g) (28 g)");
+            // collapse immediately repeated parentheticals for display.
+            servingSize: dto.serving_size?.replacingOccurrences(
+                of: #"\(([^)]+)\)\s*\(\1\)"#,
+                with: "($1)",
+                options: .regularExpression),
+            // OFF's numeric field first; else pull a mass or volume out of
+            // the label text ("2 cookies (28 g)", "240 ml", "8 fl oz").
+            servingQuantity: (dto.serving_quantity?.value).flatMap { $0 > 0 ? $0 : nil }
+                ?? parseServingGrams(dto.serving_size),
             stores: StoreNames.normalize(stores: dto.stores, storesTags: dto.stores_tags ?? []),
             nutriments: dto.nutriments.map {
                 Nutriments(

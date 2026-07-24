@@ -222,10 +222,43 @@ struct Product {
         }
     }
 
+    /// True when the product record includes ingredient information, so an
+    /// empty additive list genuinely means "no additives" rather than
+    /// "nobody typed in the ingredients yet". Whitespace-only ingredient
+    /// text counts as absent, same as Android's isNullOrBlank.
     var hasAdditiveData: Bool {
         !additives.isEmpty || !unratedAdditives.isEmpty ||
-            !(ingredientsText ?? "").isEmpty
+            !(ingredientsText ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
+}
+
+/// Grams-equivalent from a free-text serving size. Labels write servings as
+/// "2 cookies (28 g)", "240 ml", "8 fl oz", or just "2 crackers": mass wins,
+/// then volume (1 ml counts as 1 g, close enough for the water-based drinks
+/// that use ml), then fluid ounces and ounces convert. A count-only serving
+/// gives nothing, and per-serving math falls back to per-100 g honestly.
+/// Keep in sync with the Android copy in Product.kt.
+func parseServingGrams(_ servingSize: String?) -> Double? {
+    guard let servingSize,
+          !servingSize.trimmingCharacters(in: .whitespaces).isEmpty
+    else { return nil }
+    let text = servingSize.lowercased()
+    func find(_ pattern: String) -> Double? {
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(
+                  in: text, range: NSRange(text.startIndex..., in: text)),
+              let range = Range(match.range(at: 1), in: text),
+              let value = Double(text[range].replacingOccurrences(of: ",", with: ".")),
+              value > 0, value < 5000
+        else { return nil }
+        return value
+    }
+    if let grams = find(#"(\d+(?:[.,]\d+)?)\s*(?:g|grams?)\b"#) { return grams }
+    if let ml = find(#"(\d+(?:[.,]\d+)?)\s*(?:ml|milliliters?|millilitres?)\b"#) { return ml }
+    if let flOz = find(#"(\d+(?:[.,]\d+)?)\s*(?:fl\.?\s*oz|fluid\s+ounces?)\b"#) { return flOz * 29.5735 }
+    if let oz = find(#"(\d+(?:[.,]\d+)?)\s*(?:oz|ounces?)\b"#) { return oz * 28.3495 }
+    return nil
 }
 
 // MARK: - API DTOs (Open Food Facts shape, served by the Simply Pure server)
@@ -255,7 +288,10 @@ struct ProductDTO: Decodable {
     var ingredients_analysis_tags: [String]?
     var ingredients_text: String?
     var serving_size: String?
-    var serving_quantity: Double?
+    // OFF serves serving_quantity as a number or a numeric string ("31");
+    // a strict Double? would fail the WHOLE product decode over the string
+    // form, so it decodes leniently like the nutriments do.
+    var serving_quantity: LenientDouble?
     var stores: String?
     var stores_tags: [String]?
     var nutriments: NutrimentsDTO?
@@ -442,6 +478,24 @@ enum StoreNames {
     }
 }
 
+/// A Double that also accepts its JSON string form ("31"), the same
+/// tolerance NutrimentsDTO applies to nutrient values. Anything else
+/// decodes to nil rather than failing the containing product.
+struct LenientDouble: Decodable {
+    let value: Double?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let number = try? container.decode(Double.self) {
+            value = number
+        } else if let string = try? container.decode(String.self) {
+            value = Double(string.replacingOccurrences(of: ",", with: "."))
+        } else {
+            value = nil
+        }
+    }
+}
+
 /// Decodes the whole nutriments map so every nutrient OFF knows about
 /// survives (vitamins, minerals, trans fat, …), not just the scored
 /// handful. OFF occasionally serves numbers as strings, so both parse.
@@ -459,14 +513,31 @@ struct NutrimentsDTO: Decodable {
         init?(intValue: Int) { nil }
     }
 
+    /// Sanity ceiling for a per-100g nutriment value. 100 g of anything
+    /// holds at most 100 g of a component nutrient; energy tops out near
+    /// pure fat (900 kcal / 3800 kJ). Values beyond these are data-entry
+    /// errors (wrong unit), never real food. Same rules as Android.
+    private static func plausible(_ key: String, _ value: Double) -> Bool {
+        if key.hasPrefix("energy-kcal") { return value <= 950 }
+        if key.hasPrefix("energy") { return value <= 4000 } // kJ, incl. bare energy_100g
+        if key.hasPrefix("sodium") { return value <= 39.5 } // pure salt is 39.3% sodium
+        return value <= 100.0
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: AnyKey.self)
         var values: [String: Double] = [:]
         for key in container.allKeys where key.stringValue.hasSuffix("_100g") {
-            if let num = try? container.decode(Double.self, forKey: key) {
-                values[key.stringValue] = num
-            } else if let str = try? container.decode(String.self, forKey: key),
-                      let num = Double(str) {
+            var num: Double?
+            if let decoded = try? container.decode(Double.self, forKey: key) {
+                num = decoded
+            } else if let str = try? container.decode(String.self, forKey: key) {
+                num = Double(str)
+            }
+            // Physically impossible per-100g values (a community record
+            // with sodium typed in mg reads as 141953 mg/100 g) are
+            // dropped rather than displayed and deducted as fact.
+            if let num, num.isFinite, num >= 0, Self.plausible(key.stringValue, num) {
                 values[key.stringValue] = num
             }
         }
@@ -478,6 +549,13 @@ struct NutrimentsDTO: Decodable {
         sugars100g = values["sugars_100g"]
         salt100g = values["salt_100g"]
         sodium100g = values["sodium_100g"]
+        // Sodium is the most common wrong-unit entry (40 typed for
+        // 40 mg reads as 40 g). Salt is 2.5x sodium by weight, so a
+        // sodium claim above its own salt figure is impossible;
+        // trust the salt-derived number instead.
+        if let sodium = sodium100g, let salt = salt100g, sodium > salt {
+            sodium100g = salt / 2.5
+        }
         fiber100g = values["fiber_100g"]
         proteins100g = values["proteins_100g"]
         fruitsVegNuts100g = values["fruits-vegetables-nuts-estimate-from-ingredients_100g"]

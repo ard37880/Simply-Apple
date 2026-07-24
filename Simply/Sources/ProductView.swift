@@ -50,13 +50,18 @@ struct ProductView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var state: LoadState = .loading
     @State private var perServing = true
+    @State private var shareCard: ShareCard.Rendered?
     @State private var alternatives: [ProductRepository.Alternative] = []
     @State private var showSubmit = false
     @State private var userState: String?
     @State private var crowdSignal: String?
     @State private var crowdShowAsk = false
+    /// What this device answered, when known; nil = unanswered or from
+    /// before answers were stored (those can't be changed).
+    @State private var crowdYourAnswer: Bool?
     @State private var bioShowAsk = false
     @State private var bioJustAnswered = false
+    @State private var bioProofCamera = false
 
     enum LoadState {
         case loading
@@ -84,6 +89,7 @@ struct ProductView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
+                    ProvisionalScoreSection(barcode: barcode)
                     // Kind is unknown for a product not in any database yet;
                     // currentKind falls back to .food so all sections are offered.
                     Button("Add this product") { showSubmit = true }
@@ -121,12 +127,31 @@ struct ProductView: View {
         .navigationTitle("Product")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                if case .loaded(let product, let score) = state,
+                   score.displayTotal != nil {
+                    Button {
+                        Task {
+                            shareCard = await ShareCard.render(product: product, score: score)
+                        }
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    .accessibilityLabel("Share score card")
+                }
                 Button("Scan next") { onScanNext() }
             }
         }
         .sheet(isPresented: $showSubmit) {
             SubmitView(barcode: barcode, kind: currentKind, unknownKind: isUnknown)
+        }
+        .sheet(item: $shareCard) { card in
+            ActivityShareSheet(image: card.image)
+        }
+        .sheet(isPresented: $bioProofCamera) {
+            CameraPicker { image in
+                answerBioWithProof(image)
+            }
         }
         .task {
             // With the location toggle on, order the "Available at" chains
@@ -161,6 +186,7 @@ struct ProductView: View {
         state = .loading
         crowdSignal = nil
         crowdShowAsk = false
+        crowdYourAnswer = nil
         bioShowAsk = false
         bioJustAnswered = false
         switch await ProductRepository.shared.lookup(barcode: barcode) {
@@ -173,7 +199,11 @@ struct ProductView: View {
             bioShowAsk = CrowdRepository.shared.enabled &&
                 product.kind == .food &&
                 product.bioengineered == nil &&
-                !BioAnswers.answered(barcode)
+                !BioAnswers.answered(barcode) &&
+                // When the ingredient list already names a
+                // bioengineered-crop derivative the avoid check flags it
+                // on its own; asking would add nothing.
+                !PreferenceChecker.likelyBioengineered(product)
             // A fresh scan is exactly what the paired device wants to hear
             // about; the engine throttles to once a minute.
             if SyncEngine.shared.paired {
@@ -181,10 +211,13 @@ struct ProductView: View {
             }
             if CrowdRepository.shared.enabled {
                 crowdShowAsk = !CrowdRepository.shared.answered(barcode)
+                crowdYourAnswer = CrowdRepository.shared.answerOf(barcode)
                 crowdSignal = await CrowdRepository.shared.signal(barcode)
             }
+            // The floor is the STANDARD score, same as Android: suggestions
+            // should beat the product itself, not a diet-reweighted number.
             alternatives = await ProductRepository.shared
-                .alternatives(for: product, currentScore: score.displayTotal)
+                .alternatives(for: product, currentScore: score.total)
         case .notFound: state = .notFound
         case .error(let message): state = .error(message)
         }
@@ -207,12 +240,12 @@ struct ProductView: View {
                 header(product, score)
 
                 if !hits.isEmpty { preferenceBanner(hits) }
-                if crowdSignal != nil || crowdShowAsk { crowdCard }
+                if crowdSignal != nil || crowdShowAsk || crowdYourAnswer != nil { crowdCard }
                 // One question at a time: the buy question leads, the
                 // bioengineered label question takes its place once that
-                // is answered or absent. Same rule as Android.
-                if product.kind == .food,
-                   (bioShowAsk && !crowdShowAsk) || bioJustAnswered || product.bioengineered != nil {
+                // is answered or absent. The card itself renders for every
+                // food product so an unchecked one says so. Same as Android.
+                if product.kind == .food {
                     bioCard(product)
                 }
                 if score.total == nil || score.isPartial { missingDataCard(score) }
@@ -390,6 +423,21 @@ struct ProductView: View {
                         .frame(maxWidth: .infinity)
                 }
             }
+            // A recorded answer stays changeable: shelves change and so do
+            // minds; the server retracts the old count when it changes.
+            if !crowdShowAsk, let yourAnswer = crowdYourAnswer {
+                HStack(spacing: 8) {
+                    Text(yourAnswer
+                        ? "You said you bought it."
+                        : "You said you passed on it.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Change answer") { crowdShowAsk = true }
+                        .font(.caption)
+                }
+                .padding(.top, crowdSignal != nil ? 8 : 0)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
@@ -397,8 +445,18 @@ struct ProductView: View {
     }
 
     private func answerCrowd(_ bought: Bool) {
+        // A stored earlier answer means this is a changed mind, which
+        // retracts the old count instead of adding a second one.
+        let changing = crowdYourAnswer != nil
         crowdShowAsk = false
-        Task { await CrowdRepository.shared.answer(barcode, bought: bought) }
+        crowdYourAnswer = bought
+        Task {
+            if changing {
+                await CrowdRepository.shared.changeAnswer(barcode, bought: bought)
+            } else {
+                await CrowdRepository.shared.answer(barcode, bought: bought)
+            }
+        }
     }
 
     /// Bioengineered (GMO) product data: shows the reviewed answer when
@@ -417,18 +475,25 @@ struct ProductView: View {
             } else if bioJustAnswered {
                 Text("Thanks. Your answer goes live for everyone once reviewed.")
                     .font(.subheadline)
-            } else if bioShowAsk {
+            } else if bioShowAsk && !crowdShowAsk {
                 Text("Does the package say Bioengineered food or Contains a bioengineered food ingredient? It is usually near the ingredient list.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 HStack(spacing: 8) {
-                    Button("Yes") { answerBio(true) }
+                    Button("Yes") { bioProofCamera = true }
                         .buttonStyle(.bordered)
                         .frame(maxWidth: .infinity)
                     Button("No") { answerBio(false) }
                         .buttonStyle(.bordered)
                         .frame(maxWidth: .infinity)
                 }
+            } else {
+                // No data and no question to show: point at the fix, the
+                // same way the missing-nutrition card does. The label can
+                // carry a disclosure even when no ingredient gives it away.
+                Text("Not yet checked. If the package shows a US Bioengineered Food disclosure, add it with a photo under Improve this product.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -447,11 +512,27 @@ struct ProductView: View {
         }
     }
 
+    /// "Yes, the package shows the disclosure", with the photo that proves
+    /// it. The photo rides the normal submission pipeline so the reviewer
+    /// sees it next to the pending answer.
+    private func answerBioWithProof(_ image: UIImage) {
+        // Remember locally first: even if the post fails, never re-ask.
+        BioAnswers.markAnswered(barcode)
+        bioShowAsk = false
+        bioJustAnswered = true
+        Task {
+            _ = await ProductRepository.shared.submitPhoto(
+                barcode: barcode, field: "bioengineered", image: image)
+            _ = await ProductRepository.shared.submitFacts(
+                barcode: barcode, bioengineered: "yes")
+        }
+    }
+
     private func missingDataCard(_ score: ScoreResult) -> some View {
         bannerCard(color: .secondary, icon: "questionmark.circle") {
             Text(score.total == nil ? "Not enough data to score" : "Partial data").bold()
             Text(score.ingredientBased
-                ? "This product's ingredient list is missing from the database, so its safety can't be assessed yet."
+                ? "This product's ingredient list is missing from our database, so its safety can't be assessed yet."
                 : "Some of this product's data is missing, so the score only reflects what's available.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -556,8 +637,12 @@ struct ProductView: View {
                 ? "Ingredients of note (\(product.additives.count))"
                 : "Additives (\(product.additives.count + product.unratedAdditives.count))")
             if product.additives.isEmpty && product.unratedAdditives.isEmpty {
+                // For non-food, an empty match list only means our watch
+                // database had no hits, so don't overstate the certainty.
                 Text(score.additivesKnown
-                    ? "No additives detected, a good sign."
+                    ? (score.ingredientBased
+                        ? "None of this product's listed ingredients are in our watch database, a good sign."
+                        : "No additives detected, a good sign.")
                     : "No ingredient information for this product yet.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -643,6 +728,114 @@ struct ProductView: View {
     private var disclaimerText: String {
         "Scores summarize cited regulatory assessments of ingredients and " +
         "nutrition data; they aren't medical advice."
+    }
+}
+
+// MARK: - Provisional photo scoring (not-found products)
+
+/// "Score it now from a photo": for barcodes in no database yet, an
+/// ingredient-label photo gives an instant, clearly provisional score from
+/// the additive detector alone. The photo stays on the device; the normal
+/// submit-and-review pipeline is untouched behind it. Same flow as Android.
+struct ProvisionalScoreSection: View {
+    let barcode: String
+
+    @State private var busy = false
+    @State private var score: ScoreResult?
+    @State private var detectedCount = 0
+    @State private var failed = false
+    @State private var showCamera = false
+
+    var body: some View {
+        Group {
+            if let current = score, let total = current.displayTotal {
+                let color = current.displayBand?.color ?? .primary
+                HStack(spacing: 12) {
+                    Text("\(total)")
+                        .font(.largeTitle.bold())
+                        .foregroundStyle(color)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(current.displayLabel)
+                            .font(.subheadline.bold())
+                            .foregroundStyle(color)
+                        Text("Provisional")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.top, 8)
+                Text(detectedCount == 0
+                    ? "No watched additives found in your photo. Based on the ingredient label only, not nutrition, until this product is added and reviewed."
+                    : "Found \(detectedCount) listed \(detectedCount == 1 ? "additive" : "additives") in your photo. Based on the ingredient label only, not nutrition, until this product is added and reviewed.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                Button("Retake photo") { showCamera = true }
+                    .buttonStyle(.bordered)
+                    .padding(.top, 4)
+            } else if busy {
+                ProgressView()
+                    .padding(.top, 8)
+            } else {
+                Button("Score it now from a photo") { showCamera = true }
+                    .buttonStyle(.bordered)
+                    .padding(.top, 4)
+                if failed {
+                    Text("Couldn't read an ingredient list in that photo. Try again closer to the label, in good light.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+            }
+        }
+        .sheet(isPresented: $showCamera) {
+            CameraPicker { image in
+                process(image)
+            }
+        }
+    }
+
+    private func process(_ image: UIImage) {
+        busy = true
+        failed = false
+        Task {
+            // Lexicon pass snaps common OCR misreads back to real label
+            // words before detection, same as the submit flow.
+            let text = OcrCorrector.shared.correct(
+                extractIngredients(from: await recognizeText(in: image)))
+            guard !text.trimmingCharacters(in: .whitespaces).isEmpty else {
+                failed = true
+                busy = false
+                return
+            }
+            let (rated, unrated) = AdditiveRepository.shared.detectFromText(text)
+            let provisional = Product(
+                barcode: barcode,
+                name: "Unknown product",
+                brand: nil,
+                quantity: nil,
+                imageUrl: nil,
+                nutriScoreGrade: nil,
+                novaGroup: nil,
+                additives: rated,
+                unratedAdditives: unrated,
+                flaggedIngredients: [],
+                isOrganic: false,
+                isBeverage: false,
+                categoryTags: [],
+                allergensTags: [],
+                tracesTags: [],
+                ingredientsAnalysisTags: [],
+                ingredientsText: text,
+                servingSize: nil,
+                servingQuantity: nil,
+                stores: [],
+                nutriments: nil,
+                sourceDb: nil)
+            detectedCount = rated.count + unrated.count
+            score = ScoreEngine.score(provisional)
+            busy = false
+        }
     }
 }
 
