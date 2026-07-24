@@ -59,6 +59,9 @@ struct ProductView: View {
     /// What this device answered, when known; nil = unanswered or from
     /// before answers were stored (those can't be changed).
     @State private var crowdYourAnswer: Bool?
+    /// Answered before values were stored: the old answer is unknown, so
+    /// re-answering goes through the fresh path (no retraction).
+    @State private var crowdAnsweredLegacy = false
     @State private var bioShowAsk = false
     @State private var bioJustAnswered = false
     @State private var bioProofCamera = false
@@ -187,6 +190,7 @@ struct ProductView: View {
         crowdSignal = nil
         crowdShowAsk = false
         crowdYourAnswer = nil
+        crowdAnsweredLegacy = false
         bioShowAsk = false
         bioJustAnswered = false
         switch await ProductRepository.shared.lookup(barcode: barcode) {
@@ -212,6 +216,8 @@ struct ProductView: View {
             if CrowdRepository.shared.enabled {
                 crowdShowAsk = !CrowdRepository.shared.answered(barcode)
                 crowdYourAnswer = CrowdRepository.shared.answerOf(barcode)
+                crowdAnsweredLegacy = CrowdRepository.shared.answered(barcode) &&
+                    CrowdRepository.shared.answerOf(barcode) == nil
                 crowdSignal = await CrowdRepository.shared.signal(barcode)
             }
             // The floor is the STANDARD score, same as Android: suggestions
@@ -240,7 +246,8 @@ struct ProductView: View {
                 header(product, score)
 
                 if !hits.isEmpty { preferenceBanner(hits) }
-                if crowdSignal != nil || crowdShowAsk || crowdYourAnswer != nil { crowdCard }
+                if crowdSignal != nil || crowdShowAsk || crowdYourAnswer != nil
+                    || crowdAnsweredLegacy { crowdCard }
                 // One question at a time: the buy question leads, the
                 // bioengineered label question takes its place once that
                 // is answered or absent. The card itself renders for every
@@ -425,16 +432,20 @@ struct ProductView: View {
             }
             // A recorded answer stays changeable: shelves change and so do
             // minds; the server retracts the old count when it changes.
-            if !crowdShowAsk, let yourAnswer = crowdYourAnswer {
+            if !crowdShowAsk, crowdYourAnswer != nil || crowdAnsweredLegacy {
                 HStack(spacing: 8) {
-                    Text(yourAnswer
+                    Text(crowdYourAnswer == true
                         ? "You said you bought it."
-                        : "You said you passed on it.")
+                        : crowdYourAnswer == false
+                            ? "You said you passed on it."
+                            : "You answered this before.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Button("Change answer") { crowdShowAsk = true }
-                        .font(.caption)
+                    Button(crowdYourAnswer == nil ? "Answer again" : "Change answer") {
+                        crowdShowAsk = true
+                    }
+                    .font(.caption)
                 }
                 .padding(.top, crowdSignal != nil ? 8 : 0)
             }

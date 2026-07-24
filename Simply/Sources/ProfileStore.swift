@@ -48,11 +48,46 @@ final class ProfileStore: ObservableObject {
         set { allergensRaw = newValue.sorted().joined(separator: ",") }
     }
 
+    /// When the user last edited preferences on THIS device (milliseconds
+    /// since epoch, matching the Android value). Sync merges by this,
+    /// never by sync time, so a frequently syncing device can't clobber a
+    /// fresh edit made on its partner.
+    var prefsEditedAt: Int64 {
+        Int64(UserDefaults.standard.double(forKey: "profile.prefsEditedAt"))
+    }
+
+    private func stampPrefsEdited() {
+        UserDefaults.standard.set(
+            Date().timeIntervalSince1970 * 1000,
+            forKey: "profile.prefsEditedAt")
+    }
+
+    /// Applies the paired device's preferences without claiming a fresh
+    /// local edit: the remote edit time is adopted as-is.
+    func applySyncedPrefs(
+        name: String, diets: Set<String>, allergens: Set<String>, editedAt: Int64
+    ) {
+        objectWillChange.send()
+        self.name = name
+        self.diets = diets.intersection(Self.knownDietKeys)
+        self.allergens = allergens
+        UserDefaults.standard.set(Double(editedAt), forKey: "profile.prefsEditedAt")
+    }
+
+    /// Name edits route through here so they stamp prefsEditedAt like any
+    /// other preference edit.
+    func setName(_ value: String) {
+        guard value != name else { return }
+        name = value
+        stampPrefsEdited()
+    }
+
     func toggleDiet(_ key: String) {
         objectWillChange.send()
         var d = diets
         if d.contains(key) { d.remove(key) } else { d.insert(key) }
         diets = d
+        stampPrefsEdited()
     }
 
     func toggleAllergen(_ key: String) {
@@ -60,6 +95,7 @@ final class ProfileStore: ObservableObject {
         var a = allergens
         if a.contains(key) { a.remove(key) } else { a.insert(key) }
         allergens = a
+        stampPrefsEdited()
     }
 
     // Actual ways of eating. Halal covers pork and alcohol; the old

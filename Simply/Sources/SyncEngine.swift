@@ -7,6 +7,7 @@ private struct SyncBundle: Codable {
     var v: Int = 1
     let ts: Int64
     var name: String = ""
+    var prefsEditedAt: Int64 = 0
     var diets: [String] = []
     var allergens: [String] = []
     var history: [SyncScan] = []
@@ -31,6 +32,7 @@ extension SyncBundle {
         v = try c.decodeIfPresent(Int.self, forKey: .v) ?? 1
         ts = try c.decode(Int64.self, forKey: .ts)
         name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        prefsEditedAt = try c.decodeIfPresent(Int64.self, forKey: .prefsEditedAt) ?? 0
         diets = try c.decodeIfPresent([String].self, forKey: .diets) ?? []
         allergens = try c.decodeIfPresent([String].self, forKey: .allergens) ?? []
         history = try c.decodeIfPresent([SyncScan].self, forKey: .history) ?? []
@@ -165,6 +167,7 @@ final class SyncEngine {
         let bundle = SyncBundle(
             ts: Self.nowMs(),
             name: profile.name,
+            prefsEditedAt: profile.prefsEditedAt,
             diets: Array(profile.diets),
             allergens: Array(profile.allergens),
             history: HistoryStore.shared.records.map {
@@ -220,11 +223,18 @@ final class SyncEngine {
                 hasEuBanned: scan.hasEuBanned,
                 scannedAt: Date(timeIntervalSince1970: Double(scan.scannedAt) / 1000)))
         }
+        // Preferences follow the device where they were last EDITED, not
+        // the device that synced last. The old additive union resurrected
+        // removed diets and let a frequently syncing device clobber a
+        // fresh edit made on its partner.
         let profile = ProfileStore.shared
-        profile.objectWillChange.send()
-        if profile.name.isEmpty { profile.name = remote.name }
-        profile.diets = profile.diets.union(remote.diets)
-        profile.allergens = profile.allergens.union(remote.allergens)
+        if remote.prefsEditedAt > profile.prefsEditedAt {
+            profile.applySyncedPrefs(
+                name: remote.name.isEmpty ? profile.name : remote.name,
+                diets: Set(remote.diets),
+                allergens: Set(remote.allergens),
+                editedAt: remote.prefsEditedAt)
+        }
     }
 
     // AES-256-GCM, key = SHA-256 of the salted code; blob layout is

@@ -17,8 +17,13 @@ struct PreferenceEditor: View {
         let dietKeys = Set(ProfileStore.dietOptions.map(\.key))
         let avoidKeys = Set(ProfileStore.avoidOptions.map(\.key))
         VStack(alignment: .leading, spacing: 12) {
-            TextField("Name (optional)", text: $profile.name)
-                .textFieldStyle(.roundedBorder)
+            // Name edits stamp prefsEditedAt via setName so the sync merge
+            // knows which device edited preferences last.
+            TextField("Name (optional)", text: Binding(
+                get: { profile.name },
+                set: { profile.setName($0) }
+            ))
+            .textFieldStyle(.roundedBorder)
 
             section(title: "Diet preferences",
                     count: profile.diets.intersection(dietKeys).count,
