@@ -181,6 +181,10 @@ struct ProfileView: View {
         ProfileStore.shared.appearance.hasPrefix(appearanceThemePrefix)
     @State private var syncPaired = SyncEngine.shared.paired
     @State private var syncEnterCode = ""
+    @State private var supporterUnlocked = Entitlements.shared.isSupporter
+    @State private var supporterCodeInput = ""
+    @State private var redeemStatus: String?
+    @State private var redeeming = false
 
     var body: some View {
         ScrollView {
@@ -395,18 +399,64 @@ struct ProfileView: View {
             Label("Support Simply Pure", systemImage: "heart.fill")
                 .font(.headline)
                 .foregroundStyle(Color.simplyLink)
-            Text("Simply Pure is independent: no ads, no data selling, no sponsored scores. If it saves you from a bad label, consider chipping in. Every feature stays free either way.")
+            Text("Simply Pure is independent: no ads, no data selling, no sponsored scores. Scanning and scores are free for everyone; supporters unlock the extras, like themes and diet filters, plus all future features.")
                 .font(.subheadline)
-            Button {
-                openInBrowser("https://simplypure.studio86.dev/donate")
-            } label: {
-                Text("Support Simply Pure on our website")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            Text("Donations happen on our website, with secure checkout by Stripe; cancel anytime.")
+            if !supporterUnlocked {
+                Button {
+                    openInBrowser("https://simplypure.studio86.dev/donate")
+                } label: {
+                    Text("Support Simply Pure on our website")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                Text("Checkout happens on our website, secured by Stripe; cancel anytime. Afterwards you'll get a supporter code to enter below.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                TextField("Already a supporter? Enter your code", text: $supporterCodeInput,
+                          prompt: Text("SIMPLY-XXXX-XXXX"))
+                    .textFieldStyle(.roundedBorder)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                if !supporterCodeInput.trimmingCharacters(in: .whitespaces).isEmpty {
+                    Button(redeeming ? "Checking…" : "Unlock premium") {
+                        redeeming = true
+                        redeemStatus = nil
+                        Task {
+                            switch await Entitlements.shared.redeem(supporterCodeInput) {
+                            case .unlocked:
+                                supporterUnlocked = true
+                            case .inactive:
+                                redeemStatus = "That code's subscription is no longer active."
+                            case .invalid:
+                                redeemStatus = "That code wasn't recognized. Check it against your receipt page and try again."
+                            case .network:
+                                redeemStatus = "Couldn't reach the server. Check your connection and try again."
+                            }
+                            redeeming = false
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(redeeming)
+                }
+                if let redeemStatus {
+                    Text(redeemStatus)
+                        .font(.caption)
+                        .foregroundStyle(Color.red)
+                }
+            } else {
+                Text("Premium unlocked. Thank you for supporting Simply Pure!")
+                    .font(.subheadline.weight(.bold))
+                if let code = Entitlements.shared.supporterCode {
+                    Text("Your code: \(code). It works on all of your devices.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Button("Remove code from this device") {
+                    Entitlements.shared.removeSupporterCode()
+                    supporterUnlocked = false
+                }
                 .font(.caption)
-                .foregroundStyle(.secondary)
+            }
         }
         .padding()
         .background(Color.simplyYellow.opacity(0.35), in: RoundedRectangle(cornerRadius: 14))

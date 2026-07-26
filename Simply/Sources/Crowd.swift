@@ -136,6 +136,9 @@ final class CrowdRepository {
 /// Features that move behind the premium subscription at production.
 enum PremiumFeature { case search, personalization, preferenceAlerts, recallAlerts, customThemes }
 
+/// What entering a supporter code came back with.
+enum RedeemResult { case unlocked, inactive, invalid, network }
+
 /// Premium gating, dormant during the beta. Whether gates are enforced at
 /// all comes from the server (/api/v2/config), fetched once per launch and
 /// remembered across launches, so flipping premium on at production is a
@@ -143,36 +146,104 @@ enum PremiumFeature { case search, personalization, preferenceAlerts, recallAler
 /// server answer means nothing is locked, and beta builds see no change
 /// because the flag is off.
 ///
-/// The subscription itself (StoreKit) is not wired yet; until it is,
-/// `premium` only reads a local flag so the whole path can be exercised.
+/// Premium itself is a supporter code: after contributing on the website,
+/// the thanks page shows a SIMPLY-XXXX-XXXX code the user types in once.
+/// The server ties it to the Stripe subscription; we re-verify at most
+/// once a day and keep the last known answer when the network is down,
+/// so a paying supporter is never locked out by a hiccup.
 final class Entitlements {
     static let shared = Entitlements()
 
     private static let gatesKey = "entitlements.gatesEnabled"
     private static let premiumKey = "entitlements.premium"
+    private static let codeKey = "entitlements.supporterCode"
+    private static let checkedKey = "entitlements.supporterChecked"
+    private static let recheckSeconds: TimeInterval = 24 * 3600
 
     func locked(_ feature: PremiumFeature) -> Bool {
         UserDefaults.standard.bool(forKey: Self.gatesKey)
             && !UserDefaults.standard.bool(forKey: Self.premiumKey)
     }
 
+    var isSupporter: Bool { UserDefaults.standard.bool(forKey: Self.premiumKey) }
+    var supporterCode: String? { UserDefaults.standard.string(forKey: Self.codeKey) }
+
     /// Scoring uses the profile's diets unless personalization is locked.
     var activeDiets: Set<String> {
         locked(.personalization) ? [] : ProfileStore.shared.diets
     }
 
-    /// Refreshes the server flag; quietly keeps the last value on failure.
+    /// Verifies and stores a typed supporter code.
+    func redeem(_ entered: String) async -> RedeemResult {
+        let result = await verifyWithServer(
+            entered.trimmingCharacters(in: .whitespacesAndNewlines))
+        if result == .unlocked || result == .inactive {
+            // Even an inactive code is worth remembering: a lapsed
+            // subscription that gets paid again re-unlocks on re-verify.
+            UserDefaults.standard.set(
+                Date().timeIntervalSince1970, forKey: Self.checkedKey)
+        }
+        return result
+    }
+
+    func removeSupporterCode() {
+        UserDefaults.standard.removeObject(forKey: Self.codeKey)
+        UserDefaults.standard.set(false, forKey: Self.premiumKey)
+    }
+
+    /// Refreshes the server gate flag, and re-verifies a stored supporter
+    /// code at most once a day. Both quietly keep the last known state on
+    /// any failure.
     func refresh() async {
         let request = URLRequest(
             url: ProductRepository.serverBase.appendingPathComponent("api/v2/config"))
+        if let (data, response) = try? await URLSession.shared.data(for: request),
+           (response as? HTTPURLResponse)?.statusCode == 200,
+           let decoded = try? JSONDecoder().decode(ConfigResponse.self, from: data) {
+            UserDefaults.standard.set(
+                decoded.premiumGatesEnabled ?? false, forKey: Self.gatesKey)
+        }
+        guard let code = supporterCode else { return }
+        let checked = UserDefaults.standard.double(forKey: Self.checkedKey)
+        guard Date().timeIntervalSince1970 - checked >= Self.recheckSeconds else { return }
+        let result = await verifyWithServer(code)
+        if result != .network {
+            UserDefaults.standard.set(
+                Date().timeIntervalSince1970, forKey: Self.checkedKey)
+        }
+        if result == .invalid {
+            // The server no longer knows this code; stop claiming premium.
+            removeSupporterCode()
+        }
+    }
+
+    private func verifyWithServer(_ code: String) async -> RedeemResult {
+        var request = URLRequest(
+            url: ProductRepository.serverBase.appendingPathComponent("api/v2/supporter/verify"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["code": code])
         guard let (data, response) = try? await URLSession.shared.data(for: request),
-              (response as? HTTPURLResponse)?.statusCode == 200,
-              let decoded = try? JSONDecoder().decode(ConfigResponse.self, from: data)
-        else { return }
-        UserDefaults.standard.set(decoded.premiumGatesEnabled ?? false, forKey: Self.gatesKey)
+              let status = (response as? HTTPURLResponse)?.statusCode
+        else { return .network }
+        if status == 404 || status == 400 { return .invalid }
+        guard status == 200,
+              let decoded = try? JSONDecoder().decode(VerifyResponse.self, from: data)
+        else { return .network }
+        guard decoded.ok == true else { return .invalid }
+        let defaults = UserDefaults.standard
+        defaults.set(decoded.code ?? code, forKey: Self.codeKey)
+        defaults.set(decoded.active ?? false, forKey: Self.premiumKey)
+        return (decoded.active ?? false) ? .unlocked : .inactive
     }
 
     private struct ConfigResponse: Decodable {
         let premiumGatesEnabled: Bool?
+    }
+
+    private struct VerifyResponse: Decodable {
+        let ok: Bool?
+        let code: String?
+        let active: Bool?
     }
 }

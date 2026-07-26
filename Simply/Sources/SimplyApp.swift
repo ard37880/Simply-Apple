@@ -17,6 +17,8 @@ struct SimplyApp: App {
                     // a premium feature once the production gates flip).
                     await Entitlements.shared.refresh()
                     await RulesUpdater.refresh()
+                    // Did anything this device submitted get approved?
+                    await SubmissionWatcher.checkAndNotify()
                     if !Entitlements.shared.locked(.recallAlerts) {
                         await RecallChecker.checkAndNotify()
                         // Same opt-in covers score-change alerts; the

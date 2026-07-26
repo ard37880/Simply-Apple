@@ -777,15 +777,15 @@ struct ProvisionalScoreSection: View {
                         Text(current.displayLabel)
                             .font(.subheadline.bold())
                             .foregroundStyle(color)
-                        Text("Provisional")
+                        Text("Rough estimate")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
                 .padding(.top, 8)
                 Text(detectedCount == 0
-                    ? "No watched additives found in your photo. Based on the ingredient label only, not nutrition, until this product is added and reviewed."
-                    : "Found \(detectedCount) listed \(detectedCount == 1 ? "additive" : "additives") in your photo. Based on the ingredient label only, not nutrition, until this product is added and reviewed.")
+                    ? "No watched additives found in your photo. This is a rough guess from one photo: the camera misses what it can't read, and nutrition isn't scored at all, so the full score can differ a lot. Adding the product with clear photos gets it scored properly and reviewed."
+                    : "Found \(detectedCount) listed \(detectedCount == 1 ? "additive" : "additives") in your photo. This is a rough guess from one photo: the camera misses what it can't read, and nutrition isn't scored at all, so the full score can differ a lot. Adding the product with clear photos gets it scored properly and reviewed.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

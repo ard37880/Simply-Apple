@@ -896,6 +896,12 @@ struct SubmitView: View {
                     bioengineered: bioChoice)
             }
             saving = false
+            // Anything that actually landed in the review queue is worth
+            // watching: an approval later becomes a "come see the new
+            // rating" notification.
+            if factsOk == true || okPhotos > 0 {
+                SubmissionWatcher.watch(barcode: barcode, name: productNameText)
+            }
             if !captured.isEmpty, okPhotos < captured.count {
                 resultMessage = "Uploaded \(okPhotos) of \(captured.count) photos. Check your connection and tap Save again."
             } else if factsOk == false {
