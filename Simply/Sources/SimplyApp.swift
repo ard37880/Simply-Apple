@@ -11,6 +11,10 @@ struct SimplyApp: App {
                 .environmentObject(profile)
                 .environmentObject(history)
                 .task {
+                    // Decide grandfathering BEFORE the first config
+                    // refresh can ever flip the gates flag on this device.
+                    Entitlements.shared.grandfatherExistingInstall(
+                        alreadyOnboarded: ProfileStore.shared.onboarded)
                     // Server-driven feature flags and any regulatory update
                     // to the risk databases (applies next launch), then one
                     // recall check per app open (a no-op unless opted in, and

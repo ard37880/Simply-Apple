@@ -160,9 +160,23 @@ final class Entitlements {
     private static let checkedKey = "entitlements.supporterChecked"
     private static let recheckSeconds: TimeInterval = 24 * 3600
 
+    private static let grandfatheredKey = "entitlements.grandfathered"
+
     func locked(_ feature: PremiumFeature) -> Bool {
         UserDefaults.standard.bool(forKey: Self.gatesKey)
             && !UserDefaults.standard.bool(forKey: Self.premiumKey)
+            && !UserDefaults.standard.bool(forKey: Self.grandfatheredKey)
+    }
+
+    /// Beta testers keep premium for free, forever: the first launch of a
+    /// build that knows about grandfathering decides, exactly once, based
+    /// on whether this install already existed (was onboarded) while the
+    /// gates were still off. Fresh installs decide false and stay false.
+    func grandfatherExistingInstall(alreadyOnboarded: Bool) {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: Self.grandfatheredKey) == nil else { return }
+        let gatesOn = defaults.bool(forKey: Self.gatesKey)
+        defaults.set(alreadyOnboarded && !gatesOn, forKey: Self.grandfatheredKey)
     }
 
     var isSupporter: Bool { UserDefaults.standard.bool(forKey: Self.premiumKey) }
