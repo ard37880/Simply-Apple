@@ -181,6 +181,19 @@ final class Entitlements {
 
     var isSupporter: Bool { UserDefaults.standard.bool(forKey: Self.premiumKey) }
     var supporterCode: String? { UserDefaults.standard.string(forKey: Self.codeKey) }
+    var isCancelled: Bool { UserDefaults.standard.bool(forKey: Self.cancelledKey) }
+
+    /// "July 26, 2027" style end date, empty when unknown.
+    var premiumEndsText: String {
+        let ends = UserDefaults.standard.double(forKey: Self.endsKey)
+        guard ends > 0 else { return "" }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .long
+        return formatter.string(from: Date(timeIntervalSince1970: ends))
+    }
+
+    private static let cancelledKey = "entitlements.supporterCancelled"
+    private static let endsKey = "entitlements.supporterEnds"
 
     /// Scoring uses the profile's diets unless personalization is locked.
     var activeDiets: Set<String> {
@@ -246,10 +259,22 @@ final class Entitlements {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: ["code": code])
-        guard let (_, response) = try? await URLSession.shared.data(for: request),
-              let status = (response as? HTTPURLResponse)?.statusCode
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let status = (response as? HTTPURLResponse)?.statusCode,
+              (200..<300).contains(status)
         else { return false }
-        return (200..<300).contains(status)
+        let defaults = UserDefaults.standard
+        defaults.set(true, forKey: Self.cancelledKey)
+        if let parsed = try? JSONDecoder().decode(CancelResponse.self, from: data),
+           let ends = parsed.endsAt {
+            defaults.set(Double(ends), forKey: Self.endsKey)
+        }
+        return true
+    }
+
+    private struct CancelResponse: Decodable {
+        let ok: Bool?
+        let endsAt: Int64?
     }
 
     private func verifyWithServer(_ code: String) async -> RedeemResult {
@@ -272,6 +297,9 @@ final class Entitlements {
         let defaults = UserDefaults.standard
         defaults.set(decoded.code ?? code, forKey: Self.codeKey)
         defaults.set(decoded.active ?? false, forKey: Self.premiumKey)
+        // Server truth for the cancel banner, so it self-corrects.
+        defaults.set(decoded.cancelAtPeriodEnd ?? false, forKey: Self.cancelledKey)
+        defaults.set(Double(decoded.endsAt ?? 0), forKey: Self.endsKey)
         return (decoded.active ?? false) ? .unlocked : .inactive
     }
 
@@ -283,5 +311,7 @@ final class Entitlements {
         let ok: Bool?
         let code: String?
         let active: Bool?
+        let cancelAtPeriodEnd: Bool?
+        let endsAt: Int64?
     }
 }

@@ -188,6 +188,7 @@ struct ProfileView: View {
     @State private var confirmCancel = false
     @State private var cancelling = false
     @State private var cancelStatus: String?
+    @State private var supporterCancelled = Entitlements.shared.isCancelled
 
     var body: some View {
         ScrollView {
@@ -456,7 +457,21 @@ struct ProfileView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                if let cancelStatus {
+                if supporterCancelled {
+                    let ends = Entitlements.shared.premiumEndsText
+                    Text("Subscription canceled: it will not renew"
+                        + (ends.isEmpty ? "" : ", and premium stays until \(ends)")
+                        + ". Changed your mind? You can re-subscribe anytime.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button {
+                        openInBrowser("https://simplypure.studio86.dev/donate")
+                    } label: {
+                        Text("Re-subscribe on our website")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                } else if let cancelStatus {
                     Text(cancelStatus)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -474,10 +489,11 @@ struct ProfileView: View {
                         } else {
                             cancelling = true
                             Task {
-                                let ok = await Entitlements.shared.cancelSubscription()
-                                cancelStatus = ok
-                                    ? "Subscription canceled. Premium stays until your paid period ends. Thanks for the support!"
-                                    : "Couldn't cancel right now. Try again, or use the link in your Stripe receipt email."
+                                if await Entitlements.shared.cancelSubscription() {
+                                    supporterCancelled = true
+                                } else {
+                                    cancelStatus = "Couldn't cancel right now. Try again, or use the link in your Stripe receipt email."
+                                }
                                 cancelling = false
                                 confirmCancel = false
                             }
