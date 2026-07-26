@@ -137,7 +137,7 @@ final class CrowdRepository {
 enum PremiumFeature { case search, personalization, preferenceAlerts, recallAlerts, customThemes }
 
 /// What entering a supporter code came back with.
-enum RedeemResult { case unlocked, inactive, invalid, network }
+enum RedeemResult { case unlocked, inactive, invalid, inUse, network }
 
 /// Premium gating, dormant during the beta. Whether gates are enforced at
 /// all comes from the server (/api/v2/config), fetched once per launch and
@@ -215,6 +215,27 @@ final class Entitlements {
             // The server no longer knows this code; stop claiming premium.
             removeSupporterCode()
         }
+        if result == .inUse {
+            // Bound to a different device now; keep the code stored (the
+            // user may pair with that device) but stop claiming premium.
+            UserDefaults.standard.set(false, forKey: Self.premiumKey)
+        }
+    }
+
+    /// Cancels the supporter subscription at Stripe (it finishes the paid
+    /// period, then does not renew). Premium stays on until the daily
+    /// re-verify sees the subscription actually end.
+    func cancelSubscription() async -> Bool {
+        guard let code = supporterCode else { return false }
+        var request = URLRequest(
+            url: ProductRepository.serverBase.appendingPathComponent("api/v2/supporter/cancel"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["code": code])
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let status = (response as? HTTPURLResponse)?.statusCode
+        else { return false }
+        return (200..<300).contains(status)
     }
 
     private func verifyWithServer(_ code: String) async -> RedeemResult {
@@ -222,10 +243,13 @@ final class Entitlements {
             url: ProductRepository.serverBase.appendingPathComponent("api/v2/supporter/verify"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: ["code": code])
+        var payload: [String: Any] = ["code": code, "device": SyncEngine.shared.deviceId]
+        if let group = SyncEngine.shared.channelId { payload["group"] = group }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               let status = (response as? HTTPURLResponse)?.statusCode
         else { return .network }
+        if status == 403 { return .inUse }
         if status == 404 || status == 400 { return .invalid }
         guard status == 200,
               let decoded = try? JSONDecoder().decode(VerifyResponse.self, from: data)

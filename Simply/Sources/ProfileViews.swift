@@ -185,6 +185,9 @@ struct ProfileView: View {
     @State private var supporterCodeInput = ""
     @State private var redeemStatus: String?
     @State private var redeeming = false
+    @State private var confirmCancel = false
+    @State private var cancelling = false
+    @State private var cancelStatus: String?
 
     var body: some View {
         ScrollView {
@@ -429,6 +432,8 @@ struct ProfileView: View {
                                 redeemStatus = "That code's subscription is no longer active."
                             case .invalid:
                                 redeemStatus = "That code wasn't recognized. Check it against your receipt page and try again."
+                            case .inUse:
+                                redeemStatus = "That code is already active on another device. To share it, pair this device with that one under Sync between devices."
                             case .network:
                                 redeemStatus = "Couldn't reach the server. Check your connection and try again."
                             }
@@ -447,15 +452,40 @@ struct ProfileView: View {
                 Text("Premium unlocked. Thank you for supporting Simply Pure!")
                     .font(.subheadline.weight(.bold))
                 if let code = Entitlements.shared.supporterCode {
-                    Text("Your code: \(code). It works on all of your devices.")
+                    Text("Your code: \(code). It also works on devices paired with this one under Sync between devices.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                Button("Remove code from this device") {
-                    Entitlements.shared.removeSupporterCode()
-                    supporterUnlocked = false
+                if let cancelStatus {
+                    Text(cancelStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    if confirmCancel {
+                        Text("Your subscription won't renew, and premium stays until the period you paid for ends.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Button(cancelling ? "Cancelling…"
+                           : confirmCancel ? "Tap again to confirm cancellation"
+                           : "Cancel subscription") {
+                        if !confirmCancel {
+                            confirmCancel = true
+                        } else {
+                            cancelling = true
+                            Task {
+                                let ok = await Entitlements.shared.cancelSubscription()
+                                cancelStatus = ok
+                                    ? "Subscription canceled. Premium stays until your paid period ends. Thanks for the support!"
+                                    : "Couldn't cancel right now. Try again, or use the link in your Stripe receipt email."
+                                cancelling = false
+                                confirmCancel = false
+                            }
+                        }
+                    }
+                    .font(.caption)
+                    .disabled(cancelling)
                 }
-                .font(.caption)
             }
         }
         .padding()

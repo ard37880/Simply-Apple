@@ -91,12 +91,19 @@ final class SyncEngine {
     /// The active pair code, shown so more devices can join later.
     var currentCode: String? { defaults.string(forKey: "sync.code") }
 
-    private var deviceId: String {
+    var deviceId: String {
         if let id = defaults.string(forKey: "sync.device") { return id }
         let bytes = (0..<8).map { _ in UInt8.random(in: .min ... .max) }
         let id = bytes.map { String(format: "%02x", $0) }.joined()
         defaults.set(id, forKey: "sync.device")
         return id
+    }
+
+    /// The relay channel shared by paired devices; nil when unpaired.
+    /// Also identifies the "household" a supporter code is bound to.
+    var channelId: String? {
+        guard let code = currentCode else { return nil }
+        return String(Self.hex(Self.sha256("simply-sync-channel:\(code)")).prefix(32))
     }
 
     // Friendly fruit prefix + 4 random chars, e.g. MANGO-7K2P. The
