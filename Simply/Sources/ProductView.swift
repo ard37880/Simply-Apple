@@ -204,8 +204,20 @@ struct ProductView: View {
             // Only food carries the US Bioengineered Food disclosure, only
             // ask while the database has no answer yet, and only ask people
             // who opted into crowdsourcing at all.
+            // A "food" record with no nutrition facts at all is more
+            // likely a mis-filed cosmetic or household product (a
+            // sunscreen living in the food database) than real food;
+            // without evidence of a food label, don't ask.
+            let looksLikeFood = [product.nutriments?.energyKcal,
+                                 product.nutriments?.energyKj,
+                                 product.nutriments?.fat,
+                                 product.nutriments?.sugars,
+                                 product.nutriments?.sodium,
+                                 product.nutriments?.salt]
+                .contains { $0 != nil }
             bioShowAsk = CrowdRepository.shared.enabled &&
                 product.kind == .food &&
+                looksLikeFood &&
                 product.bioengineered == nil &&
                 !BioAnswers.answered(barcode) &&
                 // When the ingredient list already names a
