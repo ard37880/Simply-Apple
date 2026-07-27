@@ -540,6 +540,7 @@ struct ProductView: View {
         Task {
             _ = await ProductRepository.shared.submitFacts(
                 barcode: barcode, bioengineered: disclosed ? "yes" : "no")
+            SubmissionWatcher.watch(barcode: barcode, name: "")
         }
     }
 
@@ -556,6 +557,7 @@ struct ProductView: View {
                 barcode: barcode, field: "bioengineered", image: image)
             _ = await ProductRepository.shared.submitFacts(
                 barcode: barcode, bioengineered: "yes")
+            SubmissionWatcher.watch(barcode: barcode, name: "")
         }
     }
 

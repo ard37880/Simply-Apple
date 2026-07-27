@@ -1,7 +1,27 @@
 import SwiftUI
+import UserNotifications
+
+/// iOS drops local notifications posted while the app is in the foreground
+/// unless a delegate opts in to presenting them; our approval, recall, and
+/// score-change checks all run right at launch, in the foreground.
+final class NotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
+    static let shared = NotificationPresenter()
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler:
+            @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound, .list])
+    }
+}
 
 @main
 struct SimplyApp: App {
+    init() {
+        UNUserNotificationCenter.current().delegate = NotificationPresenter.shared
+    }
+
     @StateObject private var profile = ProfileStore.shared
     @StateObject private var history = HistoryStore.shared
 
