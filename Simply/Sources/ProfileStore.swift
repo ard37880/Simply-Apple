@@ -339,10 +339,20 @@ enum PreferenceChecker {
     /// Keyword fallback for one allergen. Gluten gets whole-word matching
     /// (plain substrings flagged buckwheat and maltodextrin); a gluten-free
     /// label suppresses only the bare-"flour" guess, never an explicit
-    /// gluten grain in the text. Same rules as Android.
+    /// gluten grain in the text. Milk and eggs scan a copy of the text with
+    /// dairy-free "milk"/"butter"/"cream" phrases and "eggplant" removed
+    /// (coconut milk flagged a pina colada juice as dairy). Same rules as
+    /// Android.
     private static func keywordLikely(_ key: String, text: String, labelsTags: [String]) -> Bool {
         guard key == "gluten" else {
-            return (allergenKeywords[key] ?? []).contains(where: text.contains)
+            var scanned = text
+            if key == "milk" {
+                scanned = scanned.replacingOccurrences(
+                    of: dairyFalseFriends, with: " ", options: .regularExpression)
+            } else if key == "eggs" {
+                scanned = scanned.replacingOccurrences(of: "eggplant", with: " ")
+            }
+            return (allergenKeywords[key] ?? []).contains(where: scanned.contains)
         }
         // An explicit gluten grain printed in the ingredient list outranks
         // a community-applied gluten-free label; mistagged labels are a
@@ -359,6 +369,16 @@ enum PreferenceChecker {
             return !glutenFreeFlours.contains(String(text[r]))
         }
     }
+
+    // Phrases that contain a dairy keyword but no dairy: plant milks and
+    // creams, cocoa/shea/nut butters, butternut squash, cream of tartar.
+    // Buttermilk, sweet cream, and non-dairy creamer (sodium caseinate)
+    // stay flaggable on purpose.
+    private static let dairyFalseFriends =
+        "\\b(coconut|almond|oat|soy|soya|rice|cashew|hemp|pea|macadamia|walnut)\\s?milk\\b|" +
+        "\\bcoconut cream\\b|\\bcream of (tartar|coconut)\\b|" +
+        "\\b(cocoa|shea|peanut|almond|cashew|sunflower|seed|nut) butter\\b|" +
+        "\\bbutternut\\b|\\bmilk thistle\\b"
 
     private static let glutenWords =
         "\\b(wheat|barley|rye|malt|malted|spelt|semolina|durum|farro|triticale|seitan|graham)\\b"
