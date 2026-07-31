@@ -219,11 +219,7 @@ struct ProductView: View {
                 product.kind == .food &&
                 looksLikeFood &&
                 product.bioengineered == nil &&
-                !BioAnswers.answered(barcode) &&
-                // When the ingredient list already names a
-                // bioengineered-crop derivative the avoid check flags it
-                // on its own; asking would add nothing.
-                !PreferenceChecker.likelyBioengineered(product)
+                !BioAnswers.answered(barcode)
             // A fresh scan is exactly what the paired device wants to hear
             // about; the engine throttles to once a minute.
             if SyncEngine.shared.paired {
@@ -276,6 +272,10 @@ struct ProductView: View {
                     bioCard(product)
                 }
                 if score.total == nil || score.isPartial { missingDataCard(score) }
+                if !Entitlements.shared.locked(.preferenceAlerts),
+                   PreferenceChecker.allergenDataMissing(product, profile: profile) {
+                    allergenUnknownCard
+                }
                 if !score.euBanned.isEmpty { bannedBanner(score.euBanned) }
 
                 if product.servingQuantity != nil, !score.ingredientBased {
@@ -567,6 +567,15 @@ struct ProductView: View {
             Text(score.ingredientBased
                 ? "This product's ingredient list is missing from our database, so its safety can't be assessed yet."
                 : "Some of this product's data is missing, so the score only reflects what's available.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var allergenUnknownCard: some View {
+        bannerCard(color: .secondary, icon: "questionmark.circle") {
+            Text("Allergens not verified").bold()
+            Text("Our data for this product does not declare allergens, so your allergen alerts have nothing to check here. Read the label. Adding the ingredient list with a photo helps everyone.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }

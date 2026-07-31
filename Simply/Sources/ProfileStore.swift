@@ -166,10 +166,11 @@ enum PreferenceChecker {
         var hits: [PreferenceHit] = []
         let text = (product.ingredientsText ?? "").lowercased()
 
-        // Allergens: declared tags, then traces, then keyword fallback.
-        // The fallback runs per allergen: partially tagged records are
-        // common (a community member tagged milk, nobody tagged sesame),
-        // so one present tag must not silence the text check for the rest.
+        // Allergens: declared tags and declared traces only. No keyword
+        // guessing: this is a fact-based app, and "Likely contains milk"
+        // from a substring match flagged coconut milk as dairy. When the
+        // record declares nothing, allergenDataMissing() drives an honest
+        // "not verified" card instead. Same rules as Android.
         for key in profile.allergens {
             guard let option = ProfileStore.allergenOptions.first(where: { $0.key == key })
             else { continue }
@@ -177,24 +178,14 @@ enum PreferenceChecker {
                 hits.append(.init(label: "Contains \(option.label.lowercased())", severity: .contains))
             } else if product.tracesTags.contains(option.offTag) {
                 hits.append(.init(label: "May contain traces of \(option.label.lowercased())", severity: .traces))
-            } else if !text.isEmpty,
-                      keywordLikely(key, text: text, labelsTags: product.labelsTags) {
-                hits.append(.init(label: "Likely contains \(option.label.lowercased())", severity: .likely))
             }
         }
 
-        // Bioengineered (GMO): the user-reported label disclosure wins,
-        // then a non-GMO or organic claim clears it, then the major US
-        // bioengineered crops make it "likely". Same rules as Android.
-        if profile.diets.contains("no_bioengineered") {
-            if product.bioengineered == "yes" {
-                hits.append(.init(label: "Contains bioengineered ingredients", severity: .contains))
-            } else if product.bioengineered == nil,
-                      !product.isOrganic,
-                      !product.labelsTags.contains(where: { nonGmoLabels.contains($0) }),
-                      text.range(of: beCropWords, options: .regularExpression) != nil {
-                hits.append(.init(label: "Likely contains bioengineered ingredients", severity: .likely))
-            }
+        // Bioengineered (GMO): only the label disclosure counts. No crop
+        // guessing; when the disclosure is unknown the product page asks
+        // the user instead. Same rules as Android.
+        if profile.diets.contains("no_bioengineered"), product.bioengineered == "yes" {
+            hits.append(.init(label: "Contains bioengineered ingredients", severity: .contains))
         }
 
         let diets = profile.diets
@@ -288,7 +279,7 @@ enum PreferenceChecker {
             if named.contains(where: text.contains) {
                 hits.append(.init(label: "Contains seed oil", severity: .contains))
             } else if text.contains("vegetable oil") {
-                hits.append(.init(label: "Likely contains seed oil (unspecified vegetable oil)", severity: .likely))
+                hits.append(.init(label: "Contains unspecified vegetable oil (often a seed oil)", severity: .likely))
             }
         }
         if diets.contains("no_hydrogenated"),
@@ -328,109 +319,28 @@ enum PreferenceChecker {
             }
         }
         if diets.contains("no_caffeine"),
-           ["caffeine", "guarana", "coffee", "yerba mate"].contains(where: text.contains) {
-            hits.append(.init(label: "Likely contains caffeine", severity: .likely))
+           let source = ["caffeine", "guarana", "coffee", "yerba mate"]
+               .first(where: text.contains) {
+            hits.append(.init(
+                label: source == "caffeine"
+                    ? "Contains caffeine"
+                    : "Contains \(source) (a caffeine source)",
+                severity: .contains))
         }
 
         var seen = Set<String>()
         return hits.filter { seen.insert($0.label).inserted }
     }
 
-    /// Keyword fallback for one allergen. Gluten gets whole-word matching
-    /// (plain substrings flagged buckwheat and maltodextrin); a gluten-free
-    /// label suppresses only the bare-"flour" guess, never an explicit
-    /// gluten grain in the text. Milk and eggs scan a copy of the text with
-    /// dairy-free "milk"/"butter"/"cream" phrases and "eggplant" removed
-    /// (coconut milk flagged a pina colada juice as dairy). Same rules as
-    /// Android.
-    private static func keywordLikely(_ key: String, text: String, labelsTags: [String]) -> Bool {
-        guard key == "gluten" else {
-            var scanned = text
-            if key == "milk" {
-                scanned = scanned.replacingOccurrences(
-                    of: dairyFalseFriends, with: " ", options: .regularExpression)
-            } else if key == "eggs" {
-                scanned = scanned.replacingOccurrences(of: "eggplant", with: " ")
-            }
-            return (allergenKeywords[key] ?? []).contains(where: scanned.contains)
-        }
-        // An explicit gluten grain printed in the ingredient list outranks
-        // a community-applied gluten-free label; mistagged labels are a
-        // celiac hazard. The label only suppresses the vaguer bare-"flour"
-        // heuristic below.
-        if text.range(of: glutenWords, options: .regularExpression) != nil { return true }
-        if labelsTags.contains(where: { glutenFreeLabels.contains($0) }) { return false }
-        // Unqualified "flour" means wheat flour on a US label, but rice
-        // flour, almond flour etc. are gluten-free.
-        guard let regex = try? NSRegularExpression(pattern: "\\b(\\w*)\\s*flour\\b") else { return false }
-        let range = NSRange(text.startIndex..., in: text)
-        return regex.matches(in: text, range: range).contains { match in
-            guard let r = Range(match.range(at: 1), in: text) else { return false }
-            return !glutenFreeFlours.contains(String(text[r]))
-        }
+    /// True when the user tracks allergens but this record declares no
+    /// allergen data at all, so the allergen check had nothing to verify.
+    /// Drives the "Allergens not verified" card: a fact-based app says
+    /// "we don't know" instead of guessing from ingredient words. Same
+    /// rules as Android.
+    static func allergenDataMissing(_ product: Product, profile: ProfileStore) -> Bool {
+        product.kind == .food &&
+            !profile.allergens.isEmpty &&
+            product.allergensTags.isEmpty &&
+            product.tracesTags.isEmpty
     }
-
-    // Phrases that contain a dairy keyword but no dairy: plant milks and
-    // creams, cocoa/shea/nut butters, butternut squash, cream of tartar.
-    // Buttermilk, sweet cream, and non-dairy creamer (sodium caseinate)
-    // stay flaggable on purpose.
-    private static let dairyFalseFriends =
-        "\\b(coconut|almond|oat|soy|soya|rice|cashew|hemp|pea|macadamia|walnut)\\s?milk\\b|" +
-        "\\bcoconut cream\\b|\\bcream of (tartar|coconut)\\b|" +
-        "\\b(cocoa|shea|peanut|almond|cashew|sunflower|seed|nut) butter\\b|" +
-        "\\bbutternut\\b|\\bmilk thistle\\b"
-
-    private static let glutenWords =
-        "\\b(wheat|barley|rye|malt|malted|spelt|semolina|durum|farro|triticale|seitan|graham)\\b"
-    private static let glutenFreeFlours: Set<String> = [
-        "rice", "corn", "masa", "almond", "coconut", "oat", "tapioca", "potato",
-        "chickpea", "garbanzo", "cassava", "buckwheat", "quinoa", "sorghum",
-        "teff", "amaranth", "millet", "soy", "pea", "lentil", "hazelnut",
-        "peanut", "banana", "plantain", "arrowroot",
-    ]
-    private static let glutenFreeLabels: Set<String> = [
-        "en:no-gluten", "en:gluten-free", "en:certified-gluten-free",
-    ]
-
-    private static let nonGmoLabels: Set<String> = [
-        "en:no-gmos", "en:no-gmo", "en:gmo-free",
-        "en:non-gmo-project", "en:non-gmo-project-verified",
-    ]
-
-    // Ingredients from the US crops that are overwhelmingly grown
-    // bioengineered (corn, soy, canola, sugar beet, cottonseed). Note the
-    // US disclosure standard exempts highly refined ingredients, so "no
-    // disclosure" does not mean "no bioengineered crops" — hence "likely".
-    // "Modified food starch" on a US label is usually corn-derived, so it
-    // counts; "enriched" does not (enrichment adds vitamins to wheat flour,
-    // and no commercially grown US wheat is bioengineered).
-    private static let beCropWords =
-        "\\b(corn syrup|corn starch|cornstarch|corn oil|corn flour|corn meal|cornmeal|" +
-        "modified food starch|modified starch|" +
-        "dextrose|maltodextrin|soybean|soy protein|soy flour|soy lecithin|" +
-        "canola|cottonseed|sugar beet|beet sugar)\\b"
-
-    /// True when the ingredient list already names a bioengineered-crop
-    /// derivative: the avoid check flags these on its own, so the product
-    /// page skips the disclosure question entirely.
-    static func likelyBioengineered(_ product: Product) -> Bool {
-        (product.ingredientsText ?? "").lowercased()
-            .range(of: beCropWords, options: .regularExpression) != nil
-    }
-
-    private static let allergenKeywords: [String: [String]] = [
-        "milk": ["milk", "whey", "casein", "butter", "cream", "cheese", "lactose"],
-        "eggs": ["egg"],
-        "peanuts": ["peanut"],
-        "nuts": ["almond", "cashew", "walnut", "pecan", "hazelnut", "pistachio", "macadamia"],
-        "soy": ["soy", "soybean", "soya"],
-        "fish": ["fish", "anchovy", "salmon", "tuna", "cod"],
-        "crustaceans": ["shrimp", "crab", "lobster", "prawn"],
-        "molluscs": ["oyster", "mussel", "clam", "squid", "scallop"],
-        "sesame": ["sesame", "tahini"],
-        "mustard": ["mustard"],
-        "celery": ["celery"],
-        "sulphites": ["sulfite", "sulphite", "sulfur dioxide", "sulphur dioxide"],
-        "lupin": ["lupin"],
-    ]
 }

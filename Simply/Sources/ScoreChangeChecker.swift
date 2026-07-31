@@ -17,6 +17,7 @@ enum ScoreChangeChecker {
     private static let lastRunKey = "watchlist.lastRun"
     private static let rulesVersionKey = "watchlist.rulesVersion"
     private static let scoresKey = "watchlist.scores"
+    private static let pendingKey = "watchlist.pending"
 
     struct Change {
         let name: String
@@ -40,20 +41,37 @@ enum ScoreChangeChecker {
         guard !history.isEmpty else { return }
 
         var baseline = (defaults.dictionary(forKey: scoresKey) as? [String: Int]) ?? [:]
+        var pending = (defaults.dictionary(forKey: pendingKey) as? [String: Int]) ?? [:]
         var changes: [Change] = []
         for record in history {
             // peek() never writes the scan-history record, so background
             // re-scoring can't reorder recents or refresh scan timestamps.
+            // A partial fetch (an upstream outage dropped the nutrition or
+            // additive data) is skipped entirely: comparing against it fires
+            // false alarms and writing it poisons the baseline.
             guard case .found(let product, let score) =
                     await ProductRepository.shared.peek(barcode: record.barcode),
-                  let standard = score.total
+                  let standard = score.total,
+                  !score.isPartial
             else { continue }
-            if let known = baseline[record.barcode], known != standard {
-                changes.append(Change(name: product.name, from: known, to: standard))
+            guard let known = baseline[record.barcode] else {
+                baseline[record.barcode] = standard // seed silently
+                continue
             }
-            baseline[record.barcode] = standard
+            if standard == known {
+                pending.removeValue(forKey: record.barcode)
+            } else if pending[record.barcode] == standard {
+                // The new score held across two runs: a real change, not a
+                // one-off data flap. Notify and move the baseline.
+                changes.append(Change(name: product.name, from: known, to: standard))
+                baseline[record.barcode] = standard
+                pending.removeValue(forKey: record.barcode)
+            } else {
+                pending[record.barcode] = standard
+            }
         }
         defaults.set(baseline, forKey: scoresKey)
+        defaults.set(pending, forKey: pendingKey)
         defaults.set(Date().timeIntervalSince1970, forKey: lastRunKey)
         defaults.set(rulesVersion, forKey: rulesVersionKey)
         if !changes.isEmpty { await notify(changes) }
@@ -65,9 +83,10 @@ enum ScoreChangeChecker {
             let direction = change.to < change.from ? "down" : "up"
             let content = UNMutableNotificationContent()
             content.title = "Score changed: \(change.name)"
-            content.subtitle = "Now \(change.to), was \(change.from)"
-            content.body = "\(change.name) moved \(direction) from \(change.from) to "
-                + "\(change.to) after updated product data or safety rules."
+            content.subtitle = "Standard score now \(change.to), was \(change.from)"
+            content.body = "The standard score for \(change.name) moved \(direction) "
+                + "from \(change.from) to \(change.to) after updated product data or "
+                + "safety rules. Your personalized score can differ."
             content.sound = .default
             try? await center.add(UNNotificationRequest(
                 identifier: "score-change-\(change.name)-\(change.from)-\(change.to)",

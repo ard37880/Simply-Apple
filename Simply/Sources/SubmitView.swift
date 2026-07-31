@@ -304,15 +304,78 @@ struct SubmitView: View {
     @State private var saving = false
     @State private var resultMessage: String?
 
+    // What the record already holds, loaded once so the user corrects or
+    // adds instead of re-entering everything. The snapshot doubles as the
+    // change detector: unchanged sections are not resubmitted, and changed
+    // ones require a label photo as proof. Same rules as Android.
+    @State private var ingredientsFromFile = false
+    @State private var prefilledIngredients = ""
+    @State private var nutritionFromFile = false
+    @State private var prefilledNutrition: [String: String] = [:]
+    @State private var prefilledName = ""
+    @State private var prefilledBrand = ""
+
+    private func prefillFromRecord() async {
+        guard !unknownKind else { return }
+        guard case .found(let product, _) =
+                await ProductRepository.shared.peek(barcode: barcode) else { return }
+        func fmt(_ v: Double) -> String {
+            if v.rounded() == v, abs(v) < 1e15 { return String(Int64(v)) }
+            var s = String(format: "%.2f", v)
+            while s.hasSuffix("0") { s.removeLast() }
+            if s.hasSuffix(".") { s.removeLast() }
+            return s
+        }
+        if productName.isEmpty, !product.name.isEmpty, product.name != "Unknown product" {
+            productName = product.name
+            prefilledName = product.name
+        }
+        if brandName.isEmpty {
+            brandName = product.brand ?? ""
+            prefilledBrand = brandName
+        }
+        let onFile = (product.ingredientsText ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if ocrText.isEmpty, !onFile.isEmpty {
+            ocrText = onFile
+            prefilledIngredients = onFile
+            ingredientsFromFile = true
+            ocrRan = true
+        }
+        // Per-100g values on file become per-serving label units, the same
+        // units the form saves back. Needs the serving grams; without them
+        // the photo-first flow stays as it was.
+        let stored = product.nutriments?.all ?? [:]
+        if chosenKind == .food, nutrition.isEmpty, !stored.isEmpty,
+           let servingG = product.servingQuantity, servingG > 0 {
+            nutrition["serving"] = fmt(servingG)
+            prefilledNutrition["serving"] = nutrition["serving"]
+            for field in nutrientFields {
+                guard let offKey = field.offKey, let per100 = stored[offKey]
+                else { continue }
+                let label = per100 * servingG / 100.0 * field.unit.perGram
+                nutrition[field.key] = fmt(label)
+                prefilledNutrition[field.key] = nutrition[field.key]
+                if !field.core { extraVisible.insert(field.key) }
+            }
+            nutritionFromFile = true
+            nutritionOcrFound = true
+            nutritionOcrRan = true
+        }
+    }
+
+    // Prefilled values are not work: Save stays off until something
+    // actually differs from what is already on file.
     private var hasWork: Bool {
         !captured.isEmpty
-            || !ocrText.trimmingCharacters(in: .whitespaces).isEmpty
+            || ocrText.trimmingCharacters(in: .whitespacesAndNewlines) != prefilledIngredients
             || bioChoice != nil
             || !store.trimmingCharacters(in: .whitespaces).isEmpty
-            || !productName.trimmingCharacters(in: .whitespaces).isEmpty
-            || !brandName.trimmingCharacters(in: .whitespaces).isEmpty
-            || nutrition.values.contains {
-                !$0.trimmingCharacters(in: .whitespaces).isEmpty
+            || productName.trimmingCharacters(in: .whitespaces) != prefilledName
+            || brandName.trimmingCharacters(in: .whitespaces) != prefilledBrand
+            || nutrientFields.contains { field in
+                (nutrition[field.key] ?? "").trimmingCharacters(in: .whitespaces) !=
+                    (prefilledNutrition[field.key] ?? "").trimmingCharacters(in: .whitespaces)
             }
             || others.contains {
                 !$0.name.trimmingCharacters(in: .whitespaces).isEmpty
@@ -425,9 +488,11 @@ struct SubmitView: View {
                     }
 
                     if ocrRan {
-                        Text(ocrText.isEmpty
-                            ? "Couldn't read text from the ingredient photo. You can type the list manually."
-                            : "Here's what the scan read from the label. Please check it against the package and fix any mistakes, then tap Save:")
+                        Text(ingredientsFromFile
+                            ? "This is the ingredient list we have on file. Add what is missing or fix what is wrong. A change needs one photo of the ingredient list as proof."
+                            : ocrText.isEmpty
+                                ? "Couldn't read text from the ingredient photo. You can type the list manually."
+                                : "Here's what the scan read from the label. Please check it against the package and fix any mistakes, then tap Save:")
                             .font(.subheadline)
                         TextEditor(text: $ocrText)
                             .frame(minHeight: 110)
@@ -503,17 +568,22 @@ struct SubmitView: View {
                 Text("You have location tagging on. Naming the store where "
                     + "you found this helps people in your area.")
             }
+            .task { await prefillFromRecord() }
             .sheet(item: $pickingField) { field in
                 CameraPicker { image in
                     captured[field] = image
                     if field == "ingredients" {
                         Task {
                             // Lexicon pass snaps common OCR misreads back to
-                            // real label words before the user proofreads.
-                            let (corrected, fixes) = OcrCorrector.shared.correctWithReport(
-                                extractIngredients(from: await recognizeText(in: image)))
-                            ocrText = corrected
-                            ocrFixes = fixes
+                            // real label words before the user proofreads. Text
+                            // already on file (or already typed) stays: here
+                            // the photo is proof, not a replacement.
+                            if ocrText.isEmpty {
+                                let (corrected, fixes) = OcrCorrector.shared.correctWithReport(
+                                    extractIngredients(from: await recognizeText(in: image)))
+                                ocrText = corrected
+                                ocrFixes = fixes
+                            }
                             ocrRan = true
                         }
                     } else if field == "nutrition" {
@@ -564,9 +634,11 @@ struct SubmitView: View {
             Text("* used to calculate the score; filling these in gives the product a full rating instead of a partial one.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
-            Text(nutritionOcrFound
-                ? "Here's what the scan read from the label. Please check it against the package and fix any mistakes, then tap Save:"
-                : "Couldn't read values from the nutrition photo. You can enter them manually.")
+            Text(nutritionFromFile
+                ? "These are the nutrition facts we have on file, shown per serving. Add what is missing or fix what is wrong. A change needs one photo of the label as proof."
+                : nutritionOcrFound
+                    ? "Here's what the scan read from the label. Please check it against the package and fix any mistakes, then tap Save:"
+                    : "Couldn't read values from the nutrition photo. You can enter them manually.")
                 .font(.subheadline)
             // Serving size: a number plus the unit as printed on the
             // label. Pieces ("3 crackers", "1 bottle") also ask the
@@ -715,8 +787,12 @@ struct SubmitView: View {
             if captured[field] != nil {
                 Button {
                     captured.removeValue(forKey: field)
-                    if field == "ingredients" { ocrText = ""; ocrRan = false; ocrFixes = [] }
-                    if field == "nutrition" {
+                    // Prefilled sections keep their text when a proof photo
+                    // is removed; only the OCR-born flow resets with its photo.
+                    if field == "ingredients", !ingredientsFromFile {
+                        ocrText = ""; ocrRan = false; ocrFixes = []
+                    }
+                    if field == "nutrition", !nutritionFromFile {
                         nutrition = [:]
                         extraVisible = []
                         others = []
@@ -752,6 +828,27 @@ struct SubmitView: View {
             resultMessage = "A shows-disclosure answer needs the photo of the disclosure. Take it and tap Save again."
             return
         }
+        // Corrections to what is already on file need the label as proof;
+        // untouched prefilled sections are not resubmitted at all.
+        let ingredientsChanged = ingredientsFromFile &&
+            ocrText.trimmingCharacters(in: .whitespacesAndNewlines) != prefilledIngredients
+        let nutritionChanged = nutritionFromFile && (
+            nutrientFields.contains { field in
+                (nutrition[field.key] ?? "").trimmingCharacters(in: .whitespaces) !=
+                    (prefilledNutrition[field.key] ?? "").trimmingCharacters(in: .whitespaces)
+            } || others.contains {
+                !$0.name.trimmingCharacters(in: .whitespaces).isEmpty &&
+                    !$0.amount.trimmingCharacters(in: .whitespaces).isEmpty
+            }
+        )
+        if ingredientsChanged, captured["ingredients"] == nil {
+            resultMessage = "You changed the ingredient list. Take a photo of the label as proof and tap Save again."
+            return
+        }
+        if nutritionChanged, captured["nutrition"] == nil {
+            resultMessage = "You changed the nutrition facts. Take a photo of the label as proof and tap Save again."
+            return
+        }
         saving = true
         resultMessage = nil
         Task {
@@ -762,10 +859,13 @@ struct SubmitView: View {
                     okPhotos += 1
                 }
             }
-            let ingredients = ocrText.trimmingCharacters(in: .whitespaces)
+            let ingredients = (ingredientsFromFile && !ingredientsChanged)
+                ? "" : ocrText.trimmingCharacters(in: .whitespaces)
             let storeName = store.trimmingCharacters(in: .whitespaces)
-            let productNameText = productName.trimmingCharacters(in: .whitespaces)
-            let brandText = brandName.trimmingCharacters(in: .whitespaces)
+            let trimmedName = productName.trimmingCharacters(in: .whitespaces)
+            let productNameText = trimmedName == prefilledName ? "" : trimmedName
+            let trimmedBrand = brandName.trimmingCharacters(in: .whitespaces)
+            let brandText = trimmedBrand == prefilledBrand ? "" : trimmedBrand
             // Sent for brand-new products, and for existing ones as a
             // correction whenever the picker differs from the current kind.
             let suggestedCategory: String? = (unknownKind || chosenKind != kind) ? {
@@ -806,13 +906,15 @@ struct SubmitView: View {
             } else {
                 servingG = servingWeightG // pieces
             }
-            let perServing: [(String, Double)] = nutrientFields.compactMap { field in
-                // OFF stores nutrients in grams; the label prints the
-                // field's unit (mg, mcg) — kcal stays kcal.
-                guard let offKey = field.offKey, let value = numField(field.key)
-                else { return nil }
-                return (offKey, value / field.unit.perGram)
-            }
+            let perServing: [(String, Double)] = (nutritionFromFile && !nutritionChanged)
+                ? [] // nothing corrected; do not resubmit what we sent them
+                : nutrientFields.compactMap { field in
+                    // OFF stores nutrients in grams; the label prints the
+                    // field's unit (mg, mcg) — kcal stays kcal.
+                    guard let offKey = field.offKey, let value = numField(field.key)
+                    else { return nil }
+                    return (offKey, value / field.unit.perGram)
+                }
             let nutritionSkipped = !perServing.isEmpty && servingG == nil
             // 3 decimals, but never fewer than 3 significant digits so
             // micronutrients entered in mcg survive the grams conversion.
@@ -869,10 +971,13 @@ struct SubmitView: View {
                 servingSizeText = nil
             }
             var factsOk: Bool?
+            // Untouched prefilled serving data rides along with unchanged
+            // nutrition: neither is resubmitted.
+            let sendServing = servingG != nil && !(nutritionFromFile && !nutritionChanged)
             // A category correction on an existing product stands on its
             // own; brand-new products still need at least one photo so the
             // reviewer has something to verify against.
-            if !ingredients.isEmpty || !storeName.isEmpty || servingG != nil
+            if !ingredients.isEmpty || !storeName.isEmpty || sendServing
                 || !otherText.isEmpty || !productNameText.isEmpty
                 || !brandText.isEmpty || bioChoice != nil
                 || (suggestedCategory != nil && (okPhotos > 0 || !unknownKind)) {
@@ -888,8 +993,8 @@ struct SubmitView: View {
                     storesRegion: region,
                     nutriments: nutriments,
                     nutritionOther: otherText.isEmpty ? nil : otherText,
-                    servingSize: servingSizeText,
-                    servingQuantity: servingG,
+                    servingSize: sendServing ? servingSizeText : nil,
+                    servingQuantity: sendServing ? servingG : nil,
                     productName: productNameText.isEmpty ? nil : productNameText,
                     brands: brandText.isEmpty ? nil : brandText,
                     suggestedCategory: suggestedCategory,
