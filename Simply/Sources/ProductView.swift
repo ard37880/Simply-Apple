@@ -272,9 +272,12 @@ struct ProductView: View {
                     bioCard(product)
                 }
                 if score.total == nil || score.isPartial { missingDataCard(score) }
-                if !Entitlements.shared.locked(.preferenceAlerts),
-                   PreferenceChecker.allergenDataMissing(product, profile: profile) {
-                    allergenUnknownCard
+                if !Entitlements.shared.locked(.preferenceAlerts) {
+                    switch PreferenceChecker.allergenAnswer(product, profile: profile) {
+                    case .noneDeclared: allergenClearCard
+                    case .unknown: allergenUnknownCard
+                    case nil: EmptyView()
+                    }
                 }
                 if !score.euBanned.isEmpty { bannedBanner(score.euBanned) }
 
@@ -569,6 +572,14 @@ struct ProductView: View {
                 : "Some of this product's data is missing, so the score only reflects what's available.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    private var allergenClearCard: some View {
+        bannerCard(color: .riskNone, icon: "checkmark.circle.fill") {
+            Text("No flagged allergens declared").bold().foregroundStyle(Color.riskNone)
+            Text("None of the allergens you track are declared in this product's data. Allergen statements are not always complete, so check the label if your allergy is severe.")
+                .font(.subheadline)
         }
     }
 

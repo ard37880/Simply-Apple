@@ -332,15 +332,68 @@ enum PreferenceChecker {
         return hits.filter { seen.insert($0.label).inserted }
     }
 
-    /// True when the user tracks allergens but this record declares no
-    /// allergen data at all, so the allergen check had nothing to verify.
-    /// Drives the "Allergens not verified" card: a fact-based app says
-    /// "we don't know" instead of guessing from ingredient words. Same
-    /// rules as Android.
-    static func allergenDataMissing(_ product: Product, profile: ProfileStore) -> Bool {
-        product.kind == .food &&
-            !profile.allergens.isEmpty &&
-            product.allergensTags.isEmpty &&
-            product.tracesTags.isEmpty
+    enum AllergenAnswer { case noneDeclared, unknown }
+
+    /// What the record can honestly tell a user who tracks allergens when
+    /// none of them hit. noneDeclared: the record has real data to check
+    /// (an ingredient list or analyzed allergen tags) and none of the
+    /// tracked allergens are declared, so a green "none declared, check
+    /// the label" card is earned. unknown: nothing to check against, so
+    /// the neutral "not verified" card shows instead. Never a guess in
+    /// either direction: a tracked allergen word in the raw text (real
+    /// dairy words, not coconut milk) withholds the all-clear but never
+    /// creates a warning. Nil when no card applies. Same rules as Android.
+    static func allergenAnswer(_ product: Product, profile: ProfileStore) -> AllergenAnswer? {
+        guard product.kind == .food, !profile.allergens.isEmpty else { return nil }
+        let options = ProfileStore.allergenOptions.filter { profile.allergens.contains($0.key) }
+        if options.contains(where: {
+            product.allergensTags.contains($0.offTag) || product.tracesTags.contains($0.offTag)
+        }) { return nil }
+        let text = (product.ingredientsText ?? "").lowercased()
+        if product.allergensTags.isEmpty,
+           text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return .unknown
+        }
+        let guarded = options.contains { option in
+            guard let words = allergenGuardWords[option.key] else { return false }
+            var scanned = text
+            if option.key == "milk" {
+                scanned = scanned.replacingOccurrences(
+                    of: dairyFalseFriends, with: " ", options: .regularExpression)
+            } else if option.key == "eggs" {
+                scanned = scanned.replacingOccurrences(of: "eggplant", with: " ")
+            }
+            return words.contains(where: scanned.contains)
+        }
+        return guarded ? .unknown : .noneDeclared
     }
+
+    // Guard words per allergen: used ONLY to withhold the "none declared"
+    // reassurance when the raw ingredient text names a tracked allergen
+    // that the tags missed. Never used to claim presence.
+    private static let allergenGuardWords: [String: [String]] = [
+        "milk": ["milk", "whey", "casein", "butter", "cream", "cheese", "lactose"],
+        "eggs": ["egg"],
+        "peanuts": ["peanut"],
+        "nuts": ["almond", "cashew", "walnut", "pecan", "hazelnut", "pistachio", "macadamia"],
+        "soy": ["soy", "soybean", "soya"],
+        "fish": ["fish", "anchovy", "salmon", "tuna", "cod"],
+        "crustaceans": ["shrimp", "crab", "lobster", "prawn"],
+        "molluscs": ["oyster", "mussel", "clam", "squid", "scallop"],
+        "sesame": ["sesame", "tahini"],
+        "mustard": ["mustard"],
+        "celery": ["celery"],
+        "sulphites": ["sulfite", "sulphite", "sulfur dioxide", "sulphur dioxide"],
+        "lupin": ["lupin"],
+        "gluten": ["wheat", "barley", "rye", "malt", "spelt", "semolina", "durum",
+                   "farro", "triticale", "seitan", "graham", "gluten"],
+    ]
+
+    // Phrases that contain a dairy keyword but no dairy: plant milks and
+    // creams, cocoa/shea/nut butters, butternut squash, cream of tartar.
+    private static let dairyFalseFriends =
+        "\\b(coconut|almond|oat|soy|soya|rice|cashew|hemp|pea|macadamia|walnut)\\s?milk\\b|" +
+        "\\bcoconut cream\\b|\\bcream of (tartar|coconut)\\b|" +
+        "\\b(cocoa|shea|peanut|almond|cashew|sunflower|seed|nut) butter\\b|" +
+        "\\bbutternut\\b|\\bmilk thistle\\b"
 }
