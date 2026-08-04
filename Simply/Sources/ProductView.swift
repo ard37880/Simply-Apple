@@ -258,19 +258,20 @@ struct ProductView: View {
                 header(product, score)
 
                 if !hits.isEmpty { preferenceBanner(hits) }
-                if crowdSignal != nil || crowdShowAsk || crowdYourAnswer != nil
-                    || crowdAnsweredLegacy { crowdCard }
-                // One question at a time: the buy question leads, the
-                // bioengineered label question takes its place once that
-                // is answered or absent. The card itself renders for every
-                // food product so an unchecked one says so. Same as Android.
-                // Mis-filed household items reach us as food with no
-                // nutrition and no ingredients; asking about a food
-                // disclosure there is noise. Data first, questions second.
-                if product.kind == .food,
+                // The bioengineered card leads while the buy question is
+                // still open; once the buy question is answered it moves
+                // below the Ingredients section. Red when the package
+                // shows the disclosure, green when it shows none, neutral
+                // while unknown. Mis-filed household items reach us as
+                // food with no nutrition and no ingredients; asking about
+                // a food disclosure there is noise. Same as Android.
+                let crowdAnswered = crowdYourAnswer != nil || crowdAnsweredLegacy
+                if product.kind == .food, !crowdAnswered,
                    product.nutriments != nil || product.ingredientsText != nil {
                     bioCard(product)
                 }
+                if crowdSignal != nil || crowdShowAsk || crowdYourAnswer != nil
+                    || crowdAnsweredLegacy { crowdCard }
                 if score.total == nil || score.isPartial { missingDataCard(score) }
                 if !Entitlements.shared.locked(.preferenceAlerts) {
                     switch PreferenceChecker.allergenAnswer(product, profile: profile) {
@@ -360,6 +361,11 @@ struct ProductView: View {
                     Text(ingredients)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                }
+
+                if product.kind == .food, crowdAnswered,
+                   product.nutriments != nil || product.ingredientsText != nil {
+                    bioCard(product)
                 }
 
                 Button("Wrong or missing data? Improve this product") {
@@ -498,8 +504,13 @@ struct ProductView: View {
     /// for the US Bioengineered Food disclosure. One tap submits; the
     /// answer goes live after review, same as every other correction.
     private func bioCard(_ product: Product) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        // Red when the package shows the disclosure, green when it shows
+        // none, neutral while unknown.
+        let tint: Color? = product.bioengineered == "yes" ? .riskHigh
+            : product.bioengineered == "no" ? .riskNone : nil
+        return VStack(alignment: .leading, spacing: 8) {
             Text("Bioengineered (GMO)").bold()
+                .foregroundStyle(tint ?? .primary)
             if product.bioengineered == "yes" {
                 Text("The package shows the US Bioengineered Food disclosure.")
                     .font(.subheadline)
@@ -509,7 +520,7 @@ struct ProductView: View {
             } else if bioJustAnswered {
                 Text("Thanks. Your answer goes live for everyone once reviewed.")
                     .font(.subheadline)
-            } else if bioShowAsk && !crowdShowAsk {
+            } else if bioShowAsk {
                 Text("Does the package say Bioengineered food or Contains a bioengineered food ingredient? It is usually near the ingredient list.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -532,7 +543,8 @@ struct ProductView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(Color.simplyCard, in: RoundedRectangle(cornerRadius: 12))
+        .background(tint?.opacity(0.12) ?? Color.simplyCard,
+                    in: RoundedRectangle(cornerRadius: 12))
     }
 
     private func answerBio(_ disclosed: Bool) {
@@ -578,7 +590,7 @@ struct ProductView: View {
     private var allergenClearCard: some View {
         bannerCard(color: .riskNone, icon: "checkmark.circle.fill") {
             Text("No flagged allergens declared").bold().foregroundStyle(Color.riskNone)
-            Text("None of the allergens you track are declared in this product's data. Allergen statements are not always complete, so check the label if your allergy is severe.")
+            Text("None of the allergens you track are declared in this product's data.")
                 .font(.subheadline)
         }
     }
@@ -586,7 +598,7 @@ struct ProductView: View {
     private var allergenUnknownCard: some View {
         bannerCard(color: .secondary, icon: "questionmark.circle") {
             Text("Allergens not verified").bold()
-            Text("Our data for this product does not declare allergens, so your allergen alerts have nothing to check here. Read the label. Adding the ingredient list with a photo helps everyone.")
+            Text("Our data for this product does not declare allergens. Check the label, or add the missing data.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
