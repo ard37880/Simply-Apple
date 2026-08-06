@@ -182,9 +182,8 @@ struct ProfileView: View {
     @State private var syncPaired = SyncEngine.shared.paired
     @State private var syncEnterCode = ""
     @State private var supporterUnlocked = Entitlements.shared.isSupporter
-    @State private var supporterCodeInput = ""
-    @State private var redeemStatus: String?
-    @State private var redeeming = false
+    @ObservedObject private var purchases = Purchases.shared
+    @State private var purchasing = false
     @State private var confirmCancel = false
     @State private var cancelling = false
     @State private var cancelStatus: String?
@@ -398,6 +397,86 @@ struct ProfileView: View {
         .buttonStyle(.plain)
     }
 
+    /// The pay-what-you-want App Store tiers. Every price unlocks the same
+    /// features; higher amounts are voluntary extra support. Purchases go
+    /// through StoreKit only: no external checkout links and no code entry
+    /// in the iOS app (guideline 3.1.1).
+    private var tierPicker: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if purchases.products.isEmpty {
+                #if DEBUG
+                // Debug-only static render for UI tests and review
+                // screenshots; the simulator has no App Store to load real
+                // products from. Compiled out of Release builds.
+                if ProcessInfo.processInfo.arguments.contains("-previewTiers") {
+                    Text("Choose your yearly price. Every price unlocks the same features; the higher amounts are extra support for an independent app.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        ForEach(["$11.99", "$23.99", "$47.99"], id: \.self) { price in
+                            Button {} label: {
+                                VStack(spacing: 2) {
+                                    Text(price).bold()
+                                    Text("per year").font(.caption2)
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                    }
+                    Text("Renews yearly until canceled in your App Store subscription settings. Cancel anytime; premium stays until the paid period ends.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Loading subscription options requires the App Store. Pull back in a moment if this doesn't fill in.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .task { await purchases.loadProducts() }
+                }
+                #else
+                Text("Loading subscription options requires the App Store. Pull back in a moment if this doesn't fill in.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .task { await purchases.loadProducts() }
+                #endif
+            } else {
+                Text("Choose your yearly price. Every price unlocks the same features; the higher amounts are extra support for an independent app.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    ForEach(purchases.products, id: \.id) { product in
+                        Button {
+                            purchasing = true
+                            Task {
+                                _ = await purchases.purchase(product)
+                                purchasing = false
+                            }
+                        } label: {
+                            VStack(spacing: 2) {
+                                Text(product.displayPrice).bold()
+                                Text("per year").font(.caption2)
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(purchasing)
+                    }
+                }
+                Text("Renews yearly until canceled in your App Store subscription settings. Cancel anytime; premium stays until the paid period ends.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            HStack(spacing: 16) {
+                Button("Restore purchases") {
+                    Task { await purchases.restore() }
+                }
+                Button("Terms") { openInBrowser("https://simplypure.studio86.dev/terms.html") }
+                Button("Privacy") { openInBrowser("https://simplypure.studio86.dev/privacy.html") }
+            }
+            .font(.caption)
+        }
+    }
+
     private var donationCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label("Support Simply Pure", systemImage: "heart.fill")
@@ -405,50 +484,15 @@ struct ProfileView: View {
                 .foregroundStyle(Color.simplyLink)
             Text("Simply Pure is independent: no ads, no data selling, no sponsored scores. Scanning and scores are free for everyone; supporters unlock the extras, like themes and diet filters, plus all future features.")
                 .font(.subheadline)
-            if !supporterUnlocked {
-                Button {
-                    openInBrowser("https://simplypure.studio86.dev/donate")
-                } label: {
-                    Text("Support Simply Pure on our website")
-                        .frame(maxWidth: .infinity)
+            if purchases.hasActiveSubscription {
+                Text("Premium unlocked. Thank you for supporting Simply Pure!")
+                    .font(.subheadline.weight(.bold))
+                Button("Manage subscription") {
+                    openInBrowser("https://apps.apple.com/account/subscriptions")
                 }
-                .buttonStyle(.borderedProminent)
-                Text("Checkout happens on our website, secured by Stripe; cancel anytime. Afterwards you'll get a supporter code to enter below.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                TextField("Already a supporter? Enter your code", text: $supporterCodeInput,
-                          prompt: Text("SIMPLY-XXXX-XXXX"))
-                    .textFieldStyle(.roundedBorder)
-                    .textInputAutocapitalization(.characters)
-                    .autocorrectionDisabled()
-                if !supporterCodeInput.trimmingCharacters(in: .whitespaces).isEmpty {
-                    Button(redeeming ? "Checking…" : "Unlock premium") {
-                        redeeming = true
-                        redeemStatus = nil
-                        Task {
-                            switch await Entitlements.shared.redeem(supporterCodeInput) {
-                            case .unlocked:
-                                supporterUnlocked = true
-                            case .inactive:
-                                redeemStatus = "That code's subscription is no longer active."
-                            case .invalid:
-                                redeemStatus = "That code wasn't recognized. Check it against your receipt page and try again."
-                            case .inUse:
-                                redeemStatus = "That code is already active on another device. To share it, pair this device with that one under Sync between devices."
-                            case .network:
-                                redeemStatus = "Couldn't reach the server. Check your connection and try again."
-                            }
-                            redeeming = false
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(redeeming)
-                }
-                if let redeemStatus {
-                    Text(redeemStatus)
-                        .font(.caption)
-                        .foregroundStyle(Color.red)
-                }
+                .font(.caption)
+            } else if !supporterUnlocked {
+                tierPicker
             } else {
                 Text("Premium unlocked. Thank you for supporting Simply Pure!")
                     .font(.subheadline.weight(.bold))
@@ -461,16 +505,10 @@ struct ProfileView: View {
                     let ends = Entitlements.shared.premiumEndsText
                     Text("Subscription canceled: it will not renew"
                         + (ends.isEmpty ? "" : ", and premium stays until \(ends)")
-                        + ". Changed your mind? You can re-subscribe anytime.")
+                        + ". Changed your mind? You can subscribe again below.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Button {
-                        openInBrowser("https://simplypure.studio86.dev/donate")
-                    } label: {
-                        Text("Re-subscribe on our website")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
+                    tierPicker
                 } else if let cancelStatus {
                     Text(cancelStatus)
                         .font(.caption)

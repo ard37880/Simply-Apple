@@ -16,7 +16,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.studio86.simply
         MARKETING_VERSION: "1.9"
-        CURRENT_PROJECT_VERSION: 47
+        CURRENT_PROJECT_VERSION: 48
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_NSCameraUsageDescription: "Simply Pure uses the camera to scan product barcodes and label photos."
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Simply Pure adds a coarse city-level tag to store reports you submit, so store availability can roll out by region."
@@ -29,3 +29,33 @@ targets:
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         DEVELOPMENT_TEAM: 5W98RM8F6A
         CODE_SIGN_STYLE: Automatic
+  SimplyUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - Simply/UITests
+      - path: Simply/Premium.storekit
+        buildPhase: resources
+    dependencies:
+      - target: Simply
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        DEVELOPMENT_TEAM: 5W98RM8F6A
+        CODE_SIGN_STYLE: Automatic
+schemes:
+  Simply:
+    build:
+      targets:
+        Simply: all
+    run:
+      config: Debug
+      # Local StoreKit catalog so the paywall renders without App Store
+      # connectivity in the simulator. Release builds use the real products.
+      storeKitConfiguration: Simply/Premium.storekit
+    test:
+      config: Debug
+      targets:
+        - SimplyUITests
+    archive:
+      config: Release

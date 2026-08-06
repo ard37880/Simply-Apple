@@ -165,6 +165,7 @@ final class Entitlements {
     func locked(_ feature: PremiumFeature) -> Bool {
         UserDefaults.standard.bool(forKey: Self.gatesKey)
             && !UserDefaults.standard.bool(forKey: Self.premiumKey)
+            && !UserDefaults.standard.bool(forKey: "entitlements.iapActive")
             && !UserDefaults.standard.bool(forKey: Self.grandfatheredKey)
     }
 

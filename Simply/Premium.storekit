@@ -1,0 +1,107 @@
+{
+  "identifier" : "F1E2D3C4-0000-4000-8000-000000000001",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+
+  ],
+  "settings" : {
+    "_failTransactionsEnabled" : false,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : [
+
+    ]
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "22292016",
+      "localizations" : [
+
+      ],
+      "name" : "Simply Pure Premium",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "11.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "A1000012",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "All premium features. Renews yearly.",
+              "displayName" : "Premium",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.studio86.simply.premium.year12",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Premium 12",
+          "subscriptionGroupID" : "22292016",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "23.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "A1000024",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "All premium features plus extra support. Renews yearly.",
+              "displayName" : "Premium Supporter",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.studio86.simply.premium.year24",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Premium 24",
+          "subscriptionGroupID" : "22292016",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "47.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "A1000048",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "All premium features plus generous extra support. Renews yearly.",
+              "displayName" : "Premium Champion",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.studio86.simply.premium.year48",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Premium 48",
+          "subscriptionGroupID" : "22292016",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}
