@@ -25,6 +25,16 @@ struct PreferenceEditor: View {
             ))
             .textFieldStyle(.roundedBorder)
 
+            Text("Preferences")
+                .font(.headline)
+                .padding(.top, 16)
+
+            if locked {
+                Label("Diet preferences, avoid lists, and allergen alerts are premium features. Unlock them from Support Simply Pure in the profile.",
+                      systemImage: "lock.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             section(title: "Diet preferences",
                     count: profile.diets.intersection(dietKeys).count,
                     expanded: $dietsExpanded) {
@@ -44,6 +54,11 @@ struct PreferenceEditor: View {
             }
         }
     }
+
+    // Selecting preferences that premium would silently ignore reads as
+    // the feature working when it is not; locked sections gray out and
+    // say why instead.
+    private var locked: Bool { Entitlements.shared.locked(.personalization) }
 
     @ViewBuilder
     private func section<Content: View>(
@@ -68,7 +83,7 @@ struct PreferenceEditor: View {
         _ options: [(String, String)], selected: Set<String>,
         toggle: @escaping (String) -> Void
     ) -> some View {
-        FlowLayout(spacing: 8) {
+        lockableFlow {
             ForEach(options, id: \.0) { key, label in
                 Button {
                     toggle(key)
@@ -87,6 +102,15 @@ struct PreferenceEditor: View {
                 .buttonStyle(.plain)
             }
         }
+    }
+
+    /// Grays out and disables the chip grid while premium is locked.
+    private func lockableFlow<Content: View>(
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        FlowLayout(spacing: 8) { content() }
+            .disabled(locked)
+            .opacity(locked ? 0.45 : 1)
     }
 }
 
@@ -144,15 +168,22 @@ struct OnboardingView: View {
     }
 
     private var onboardingForm: some View {
+        // Just the name: preferences moved to the profile so a locked
+        // premium wall never greets a brand-new user.
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Welcome to Simply Pure")
                     .font(.largeTitle.bold())
                     .padding(.top, 40)
-                Text("Set up your profile so scans can flag what matters to you. Everything stays on this phone: no account, no cloud, nothing shared.")
+                Text("Everything stays on this phone: no account, no cloud, nothing shared.")
                     .font(.body)
 
-                PreferenceEditor()
+                TextField("Name (optional)", text: Binding(
+                    get: { profile.name },
+                    set: { profile.setName($0) }
+                ))
+                .textFieldStyle(.roundedBorder)
+                .padding(.top, 8)
 
                 Button {
                     profile.onboarded = true
@@ -163,8 +194,9 @@ struct OnboardingView: View {
                 .buttonStyle(.borderedProminent)
                 .padding(.top, 24)
 
-                Text("You can change all of this anytime from your profile.")
+                Text("Diet preferences, ingredients to avoid, and allergen alerts live in your profile. Tap the circle next to the greeting anytime to set them up.")
                     .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             .padding(24)
         }
@@ -184,6 +216,8 @@ struct ProfileView: View {
     @State private var supporterUnlocked = Entitlements.shared.isSupporter
     @ObservedObject private var purchases = Purchases.shared
     @State private var purchasing = false
+    @State private var tierIndex = 0.0
+    @State private var celebrate = false
     @State private var confirmCancel = false
     @State private var cancelling = false
     @State private var cancelStatus: String?
@@ -206,6 +240,13 @@ struct ProfileView: View {
                 // gates flip on, same as search.
                 let themesAvailable = !Entitlements.shared.locked(.customThemes)
                 appearanceSegments(themesAvailable: themesAvailable)
+                if themesExpanded && !themesAvailable {
+                    Label("Themes are a premium feature. Unlock them under Support Simply Pure below.",
+                          systemImage: "lock.fill")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 8)
+                }
                 if themesAvailable && themesExpanded {
                     Text("Hand-tuned palettes that recolor the whole app. "
                         + "Scores keep their green, yellow and red.")
@@ -372,8 +413,10 @@ struct ProfileView: View {
                     profile.appearance = option.rawValue
                 }
             }
-            if themesAvailable {
-                segment("Themes", selected: themed) {
+            // Always visible so locked users learn it exists; the tap
+            // shows the lock note instead of the gallery when locked.
+            if true {
+                segment(themesAvailable ? "Themes" : "Themes \u{1F512}".replacingOccurrences(of: " \u{1F512}", with: ""), selected: themed) {
                     themesExpanded.toggle()
                 }
             }
@@ -397,10 +440,43 @@ struct ProfileView: View {
         .buttonStyle(.plain)
     }
 
-    /// The pay-what-you-want App Store tiers. Every price unlocks the same
-    /// features; higher amounts are voluntary extra support. Purchases go
-    /// through StoreKit only: no external checkout links and no code entry
-    /// in the iOS app (guideline 3.1.1).
+    /// One price with a slider (the Yuka pattern): $11.99 by default, slide
+    /// right for the voluntary higher tiers. Every amount unlocks the same
+    /// features. Purchases go through StoreKit only: no external checkout
+    /// links and no code entry in the iOS app (guideline 3.1.1).
+    private func sliderTiers(prices: [String], buy: @escaping (Int) -> Void) -> some View {
+        let idx = min(Int(tierIndex.rounded()), prices.count - 1)
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(prices[idx])
+                    .font(.system(size: 40, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.simplyLink)
+                    .contentTransition(.numericText())
+                    .animation(.snappy, value: idx)
+                Text("per year")
+                    .foregroundStyle(.secondary)
+            }
+            if prices.count > 1 {
+                Slider(value: $tierIndex, in: 0...Double(prices.count - 1), step: 1)
+                    .tint(Color.simplyLink)
+                Text("Every amount unlocks the same features. Sliding higher is extra support for an independent app.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Button {
+                buy(idx)
+            } label: {
+                Text(purchasing ? "One moment" : "Become a supporter")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(purchasing)
+            Text("Renews yearly until canceled in your App Store subscription settings. Cancel anytime; premium stays until the paid period ends.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
     private var tierPicker: some View {
         VStack(alignment: .leading, spacing: 10) {
             if purchases.products.isEmpty {
@@ -409,62 +485,25 @@ struct ProfileView: View {
                 // screenshots; the simulator has no App Store to load real
                 // products from. Compiled out of Release builds.
                 if ProcessInfo.processInfo.arguments.contains("-previewTiers") {
-                    Text("Choose your yearly price. Every price unlocks the same features; the higher amounts are extra support for an independent app.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    HStack(spacing: 8) {
-                        ForEach(["$11.99", "$23.99", "$47.99"], id: \.self) { price in
-                            Button {} label: {
-                                VStack(spacing: 2) {
-                                    Text(price).bold()
-                                    Text("per year").font(.caption2)
-                                }
-                                .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.borderedProminent)
-                        }
+                    sliderTiers(prices: ["$11.99", "$23.99", "$47.99"]) { _ in
+                        celebrate = true
                     }
-                    Text("Renews yearly until canceled in your App Store subscription settings. Cancel anytime; premium stays until the paid period ends.")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
                 } else {
-                    Text("Loading subscription options requires the App Store. Pull back in a moment if this doesn't fill in.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .task { await purchases.loadProducts() }
+                    loadingNote
                 }
                 #else
-                Text("Loading subscription options requires the App Store. Pull back in a moment if this doesn't fill in.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .task { await purchases.loadProducts() }
+                loadingNote
                 #endif
             } else {
-                Text("Choose your yearly price. Every price unlocks the same features; the higher amounts are extra support for an independent app.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                HStack(spacing: 8) {
-                    ForEach(purchases.products, id: \.id) { product in
-                        Button {
-                            purchasing = true
-                            Task {
-                                _ = await purchases.purchase(product)
-                                purchasing = false
-                            }
-                        } label: {
-                            VStack(spacing: 2) {
-                                Text(product.displayPrice).bold()
-                                Text("per year").font(.caption2)
-                            }
-                            .frame(maxWidth: .infinity)
+                sliderTiers(prices: purchases.products.map(\.displayPrice)) { idx in
+                    purchasing = true
+                    Task {
+                        if await purchases.purchase(purchases.products[idx]) {
+                            celebrate = true
                         }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(purchasing)
+                        purchasing = false
                     }
                 }
-                Text("Renews yearly until canceled in your App Store subscription settings. Cancel anytime; premium stays until the paid period ends.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
             }
             HStack(spacing: 16) {
                 Button("Restore purchases") {
@@ -477,6 +516,13 @@ struct ProfileView: View {
         }
     }
 
+    private var loadingNote: some View {
+        Text("Loading subscription options requires the App Store. Pull back in a moment if this doesn't fill in.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .task { await purchases.loadProducts() }
+    }
+
     private var donationCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label("Support Simply Pure", systemImage: "heart.fill")
@@ -485,7 +531,20 @@ struct ProfileView: View {
             Text("Simply Pure is independent: no ads, no data selling, no sponsored scores. Scanning and scores are free for everyone; supporters unlock the extras, like themes and diet filters, plus all future features.")
                 .font(.subheadline)
             if purchases.hasActiveSubscription {
-                Text("Premium unlocked. Thank you for supporting Simply Pure!")
+                if celebrate {
+                    HStack {
+                        Spacer()
+                        Image("MascotCelebrate")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(height: 120)
+                            .transition(.scale.combined(with: .opacity))
+                        Spacer()
+                    }
+                }
+                Text(celebrate
+                    ? "You're a supporter now. Thank you for keeping Simply Pure independent!"
+                    : "Premium unlocked. Thank you for supporting Simply Pure!")
                     .font(.subheadline.weight(.bold))
                 Button("Manage subscription") {
                     openInBrowser("https://apps.apple.com/account/subscriptions")
@@ -544,6 +603,12 @@ struct ProfileView: View {
         }
         .padding()
         .background(Color.simplyYellow.opacity(0.35), in: RoundedRectangle(cornerRadius: 14))
+        .overlay {
+            if celebrate {
+                ConfettiView()
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+            }
+        }
     }
 
     /// Store rules: purchases can't happen in-app, so donations (and the
@@ -601,5 +666,40 @@ struct PermissionToggleRow: View {
             }
         }
         .padding(.vertical, 4)
+    }
+}
+
+/// A one-shot confetti burst for the moment someone becomes a supporter.
+/// Deterministic pseudo-random placement (no RNG, no timers): each piece
+/// falls once and the whole layer fades out.
+struct ConfettiView: View {
+    @State private var fall = false
+
+    private let colors: [Color] = [
+        Color(red: 0.11, green: 0.56, blue: 0.24),
+        Color(red: 1.00, green: 0.72, blue: 0.24),
+        Color(red: 0.86, green: 0.27, blue: 0.45),
+        Color(red: 0.31, green: 0.51, blue: 0.93),
+        Color(red: 0.79, green: 0.61, blue: 0.95),
+    ]
+
+    var body: some View {
+        GeometryReader { geo in
+            ForEach(0..<42, id: \.self) { i in
+                let fx = CGFloat((i * 73) % 100) / 100
+                let delay = Double((i * 37) % 100) / 220
+                let size = CGFloat(6 + (i * 13) % 7)
+                Rectangle()
+                    .fill(colors[i % colors.count])
+                    .frame(width: size, height: size * 0.62)
+                    .rotationEffect(.degrees(Double((i * 61) % 360) + (fall ? 300 : 0)))
+                    .position(x: fx * geo.size.width,
+                              y: fall ? geo.size.height + 24 : -24)
+                    .animation(.easeIn(duration: 1.7).delay(delay), value: fall)
+            }
+        }
+        .allowsHitTesting(false)
+        .opacity(fall ? 1 : 0.9)
+        .onAppear { fall = true }
     }
 }
