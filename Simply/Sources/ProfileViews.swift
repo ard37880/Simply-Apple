@@ -230,6 +230,47 @@ struct ProfileView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
+                // Every approved submission fixed a product page for everyone,
+                // so the tally gets a celebratory card rather than a stat row.
+                // The count lives on this device (there are no accounts to tie
+                // submissions to); it grows as the watcher learns of approvals.
+                // Mirrors Android's helped-everyone card.
+                let approvedFixes = SubmissionWatcher.approvedCount
+                HStack(spacing: 14) {
+                    Image("mascot_celebrating")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 76, height: 76)
+                    VStack(alignment: .leading, spacing: 2) {
+                        if approvedFixes > 0 {
+                            HStack(alignment: .lastTextBaseline, spacing: 8) {
+                                Text("\(approvedFixes)")
+                                    .font(.system(size: 34, weight: .bold))
+                                    .foregroundStyle(Color.simplyLink)
+                                Text(approvedFixes == 1
+                                    ? "time you've helped everyone"
+                                    : "times you've helped everyone")
+                                    .font(.subheadline.weight(.bold))
+                            }
+                            Text("Each approved product fix went live for every "
+                                + "Simply Pure user. Thank you!")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("Help everyone who scans")
+                                .font(.headline)
+                            Text("When a product fix you submit is approved, it "
+                                + "goes live for every Simply Pure user, and "
+                                + "your helped count grows right here.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                .background(Color.simplyCard, in: RoundedRectangle(cornerRadius: 14))
+
                 PreferenceEditor(collapsible: true)
 
                 Text("Appearance")
