@@ -247,6 +247,8 @@ struct ProductView: View {
         // Preference alerts join premium when the production gates flip on.
         let hits = Entitlements.shared.locked(.preferenceAlerts)
             ? [] : PreferenceChecker.check(product, profile: profile)
+        let allergenAnswer = Entitlements.shared.locked(.preferenceAlerts)
+            ? nil : PreferenceChecker.allergenAnswer(product, profile: profile)
         let servingFactor = (perServing ? product.servingQuantity : nil).map { $0 / 100 } ?? 1
         let metrics = Metric.build(product)
         let negatives = metrics.filter { !$0.higherIsBetter && $0.verdict != .good }
@@ -257,7 +259,14 @@ struct ProductView: View {
             VStack(alignment: .leading, spacing: 12) {
                 header(product, score)
 
-                if !hits.isEmpty { preferenceBanner(hits) }
+                // One card answers every personal check with its own verdict
+                // row. The old pair — a red "against your preferences"
+                // banner near a green "no flagged allergens" card — read as
+                // a contradiction; the two were answering different
+                // questions. Same as Android.
+                if !hits.isEmpty || allergenAnswer != nil {
+                    preferencesCheckCard(hits, allergenAnswer)
+                }
                 // The bioengineered card leads while the buy question is
                 // still open; once the buy question is answered it moves
                 // below the Ingredients section. Red when the package
@@ -273,13 +282,6 @@ struct ProductView: View {
                 if crowdSignal != nil || crowdShowAsk || crowdYourAnswer != nil
                     || crowdAnsweredLegacy { crowdCard }
                 if score.total == nil || score.isPartial { missingDataCard(score) }
-                if !Entitlements.shared.locked(.preferenceAlerts) {
-                    switch PreferenceChecker.allergenAnswer(product, profile: profile) {
-                    case .noneDeclared: allergenClearCard
-                    case .unknown: allergenUnknownCard
-                    case nil: EmptyView()
-                    }
-                }
                 if !score.euBanned.isEmpty { bannedBanner(score.euBanned) }
 
                 if product.servingQuantity != nil, !score.ingredientBased {
@@ -426,13 +428,50 @@ struct ProductView: View {
         .padding(.top, 8)
     }
 
-    private func preferenceBanner(_ hits: [PreferenceHit]) -> some View {
-        let worst = hits.map(\.severity.rawValue).min() ?? 2
-        let color: Color = worst == 0 ? .riskHigh : .riskModerate
-        return bannerCard(color: color, icon: "exclamationmark.triangle.fill") {
-            Text("Against your preferences").bold().foregroundStyle(color)
-            ForEach(hits) { Text($0.label).font(.subheadline) }
+    /// Variant A of the personal-check redesign: one card, one verdict row
+    /// per thing the user actually tracks. Diet violations get a red or
+    /// amber cross by severity; the tracked-allergen answer is a green
+    /// check when the data can clear it and a neutral line when it can't.
+    /// Same as Android.
+    private func preferencesCheckCard(
+        _ hits: [PreferenceHit],
+        _ allergenAnswer: PreferenceChecker.AllergenAnswer?
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Your preferences check").bold()
+            ForEach(hits) { hit in
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "xmark")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(
+                            hit.severity == .contains ? Color.riskHigh : Color.riskModerate)
+                    Text(hit.label).font(.subheadline)
+                }
+            }
+            if let answer = allergenAnswer {
+                HStack(alignment: .top, spacing: 8) {
+                    if answer == .noneDeclared {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(Color.riskNone)
+                        Text("Allergens you track: none declared in this product's data.")
+                            .font(.subheadline)
+                    } else {
+                        Image(systemName: "info.circle")
+                            .foregroundStyle(.secondary)
+                        Text("Allergens you track: not verified. Check the label, or add the missing data.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            Text("Checked against your diet preferences, ingredients to avoid, and tracked allergens.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.top, 4)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
     }
 
     /// Opt-in crowdsourcing card: what other scanners chose (once a product
@@ -582,23 +621,6 @@ struct ProductView: View {
             Text(score.ingredientBased
                 ? "This product's ingredient list is missing from our database, so its safety can't be assessed yet."
                 : "Some of this product's data is missing, so the score only reflects what's available.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var allergenClearCard: some View {
-        bannerCard(color: .riskNone, icon: "checkmark.circle.fill") {
-            Text("No flagged allergens declared").bold().foregroundStyle(Color.riskNone)
-            Text("None of the allergens you track are declared in this product's data.")
-                .font(.subheadline)
-        }
-    }
-
-    private var allergenUnknownCard: some View {
-        bannerCard(color: .secondary, icon: "questionmark.circle") {
-            Text("Allergens not verified").bold()
-            Text("Our data for this product does not declare allergens. Check the label, or add the missing data.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
