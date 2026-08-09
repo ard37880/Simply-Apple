@@ -375,7 +375,9 @@ struct ProfileView: View {
                 .foregroundStyle(Color.simplyLink)
                 .padding(.top, 8)
 
-                Text("Simply Pure v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0") (Beta)")
+                // Marketing version alone is ambiguous on iOS (every beta
+                // says 1.9); the build number is what support needs.
+                Text("Simply Pure v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0").\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0") (Beta)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.top, 8)

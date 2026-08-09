@@ -27,7 +27,19 @@ struct SimplyApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            Group {
+                // The beta-wide force-update lever: when the server says
+                // this build is below the required minimum, the app is a
+                // single update screen. The value lands with the once-per-
+                // launch config refresh below (which still runs while
+                // blocked, so lowering the requirement un-blocks too), and
+                // a block takes effect on the launch after the flip.
+                if Entitlements.shared.requiredBuild > Entitlements.currentBuildNumber {
+                    UpdateRequiredView()
+                } else {
+                    RootView()
+                }
+            }
                 .environmentObject(profile)
                 .environmentObject(history)
                 .task {
@@ -51,6 +63,38 @@ struct SimplyApp: App {
                     }
                 }
         }
+    }
+}
+
+/// Full-screen stop shown when the server's required minimum build is
+/// newer than this one. Beta builds always come from TestFlight, so the
+/// button leads there.
+struct UpdateRequiredView: View {
+    var body: some View {
+        VStack(spacing: 0) {
+            Image("mascot_waving")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 96, height: 96)
+            Text("Time for an update")
+                .font(.title2.bold())
+                .padding(.top, 20)
+            Text("This version of Simply Pure is too old to keep going. "
+                + "Grab the newest one in TestFlight and pick up right where "
+                + "you left off; your history and profile stay on this phone.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.top, 10)
+            Button("Open TestFlight") {
+                if let url = URL(string: "https://testflight.apple.com/join/hwQFC2Gh") {
+                    UIApplication.shared.open(url)
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .padding(.top, 22)
+        }
+        .padding(32)
     }
 }
 

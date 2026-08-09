@@ -230,6 +230,15 @@ final class Entitlements {
            let decoded = try? JSONDecoder().decode(ConfigResponse.self, from: data) {
             UserDefaults.standard.set(
                 decoded.premiumGatesEnabled ?? false, forKey: Self.gatesKey)
+            // Server-announced newest and minimum TestFlight build numbers.
+            // Latest drives a "newer beta is out" card on home (TestFlight
+            // never tells testers in-app); required is the force-update
+            // lever: a server env flip blanks old builds into an update
+            // screen, no release needed. Both fail open.
+            UserDefaults.standard.set(
+                decoded.latestIosBuild ?? 0, forKey: "updates.latestBuild")
+            UserDefaults.standard.set(
+                decoded.requiredIosBuild ?? 0, forKey: "updates.requiredBuild")
         }
         guard let code = supporterCode else { return }
         let checked = UserDefaults.standard.double(forKey: Self.checkedKey)
@@ -306,7 +315,17 @@ final class Entitlements {
 
     private struct ConfigResponse: Decodable {
         let premiumGatesEnabled: Bool?
+        let latestIosBuild: Int?
+        let requiredIosBuild: Int?
     }
+
+    /// This build's CFBundleVersion as a number, 0 if unparseable.
+    static var currentBuildNumber: Int {
+        Int(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "") ?? 0
+    }
+
+    var latestBuild: Int { UserDefaults.standard.integer(forKey: "updates.latestBuild") }
+    var requiredBuild: Int { UserDefaults.standard.integer(forKey: "updates.requiredBuild") }
 
     private struct VerifyResponse: Decodable {
         let ok: Bool?
