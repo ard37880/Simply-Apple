@@ -161,6 +161,39 @@ struct PreferenceHit: Identifiable {
 
 enum PreferenceChecker {
 
+    // Whole-word matching for short ingredient words: plain substring read
+    // "xantham gum" (an OCR misspelling of xanthan) as ham, and would read
+    // graham crackers as pork, crumbs as rum, licorice as rice. A single
+    // word matches on its own (plus a simple plural); phrases with spaces
+    // still match as phrases. Mirrors Android's wordIn().
+    private static var wordRegexCache: [String: NSRegularExpression] = [:]
+    private static func wordIn(_ text: String, _ word: String) -> Bool {
+        if word.contains(" ") || word.contains("-") { return text.contains(word) }
+        let regex: NSRegularExpression
+        if let cached = wordRegexCache[word] {
+            regex = cached
+        } else {
+            let pattern = "\\b\(NSRegularExpression.escapedPattern(for: word))(?:e?s)?\\b"
+            guard let built = try? NSRegularExpression(pattern: pattern) else {
+                return text.contains(word)
+            }
+            wordRegexCache[word] = built
+            regex = built
+        }
+        let range = NSRange(text.startIndex..., in: text)
+        return regex.firstMatch(in: text, range: range) != nil
+    }
+
+    // Label phrases that name no actual alcohol, stripped before the
+    // alcohol scan so root beer and bourbon vanilla stay halal.
+    private static func stripAlcoholFalseFriends(_ text: String) -> String {
+        var out = text
+        for phrase in ["root beer", "ginger beer", "birch beer", "bourbon vanilla"] {
+            out = out.replacingOccurrences(of: phrase, with: " ")
+        }
+        return out
+    }
+
     static func check(_ product: Product, profile: ProfileStore) -> [PreferenceHit] {
         guard product.kind == .food else { return [] }
         var hits: [PreferenceHit] = []
@@ -206,25 +239,30 @@ enum PreferenceChecker {
         let porkWords = ["pork", "bacon", "ham", "lard"]
         let shellfish = ["shrimp", "crab", "lobster", "prawn", "oyster", "clam", "mussel"]
         let alcoholWords = ["alcohol", "wine", "beer", "rum", "whiskey", "bourbon", "liqueur"]
+        // Compounds a word-boundary match would miss are listed outright
+        // (popcorn is corn, buttermilk is dairy); buckwheat deliberately
+        // stops counting as wheat — it contains none.
         let grainsAndSugars = ["wheat", "corn", "rice", "oat", "barley", "flour", "sugar",
-                               "corn syrup", "maltodextrin"]
+                               "corn syrup", "maltodextrin", "popcorn", "oatmeal",
+                               "cornmeal", "cornstarch"]
+        let alcoholText = stripAlcoholFalseFriends(text)
 
-        if diets.contains("pescatarian"), landMeat.contains(where: text.contains) {
+        if diets.contains("pescatarian"), landMeat.contains(where: { wordIn(text, $0) }) {
             hits.append(.init(label: "Contains meat (not pescatarian)", severity: .contains))
         }
         if diets.contains("halal") {
-            if porkWords.contains(where: text.contains) {
+            if porkWords.contains(where: { wordIn(text, $0) }) {
                 hits.append(.init(label: "Not halal (contains pork)", severity: .contains))
-            } else if let match = alcoholWords.first(where: text.contains) {
+            } else if let match = alcoholWords.first(where: { wordIn(alcoholText, $0) }) {
                 hits.append(.init(label: "May not be halal (contains \(match))", severity: .contains))
             } else if text.contains("gelatin"), !text.contains("fish gelatin") {
                 hits.append(.init(label: "May not be halal (unspecified gelatin)", severity: .likely))
             }
         }
         if diets.contains("kosher") {
-            if porkWords.contains(where: text.contains) {
+            if porkWords.contains(where: { wordIn(text, $0) }) {
                 hits.append(.init(label: "Not kosher (contains pork)", severity: .contains))
-            } else if shellfish.contains(where: text.contains) {
+            } else if shellfish.contains(where: { wordIn(text, $0) }) {
                 hits.append(.init(label: "Not kosher (contains shellfish)", severity: .contains))
             } else if text.contains("gelatin"), !text.contains("fish gelatin") {
                 hits.append(.init(label: "May not be kosher (unspecified gelatin)", severity: .likely))
@@ -237,8 +275,9 @@ enum PreferenceChecker {
         }
         if diets.contains("paleo") {
             let nonPaleo: [String] = grainsAndSugars +
-                ["soy", "bean", "lentil", "peanut", "milk", "cheese"]
-            if nonPaleo.contains(where: { text.contains($0) }) {
+                ["soy", "soybean", "soya", "bean", "lentil", "peanut",
+                 "milk", "buttermilk", "cheese"]
+            if nonPaleo.contains(where: { wordIn(text, $0) }) {
                 hits.append(.init(label: "Contains grains/dairy/legumes (not paleo)", severity: .contains))
             }
         }
