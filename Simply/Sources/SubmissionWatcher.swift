@@ -36,6 +36,15 @@ enum SubmissionWatcher {
         UserDefaults.standard.integer(forKey: countKey)
     }
 
+    /// Karma: how many times the community has scanned this device's
+    /// approved contributions since each went live. Computed by the server
+    /// from anonymous per-barcode tallies; attribution never leaves this
+    /// device (the journal is the only record of who submitted what).
+    private static let impactKey = "submissions.impactPoints"
+    static var impactPoints: Int {
+        UserDefaults.standard.integer(forKey: impactKey)
+    }
+
     /// Permanent journal of every barcode this device ever submitted, with
     /// the first submission time. The watch list drops entries once they
     /// resolve (nobody should be re-notified), but the profile's helped
@@ -109,14 +118,39 @@ enum SubmissionWatcher {
         let journal = loadJournal()
         guard !journal.isEmpty else { return }
         var approved = 0
+        var impact = 0
         var index = 0
         while index < journal.count {
             let chunk = Array(journal[index ..< min(index + 50, journal.count)])
             guard let results = await fetchStatuses(chunk) else { return }
             approved += chunk.filter { results[$0.barcode] == "approved" }.count
+            guard let impacts = await fetchImpact(chunk) else { return }
+            impact += impacts.values.reduce(0, +)
             index += 50
         }
         defaults.set(approved, forKey: countKey)
+        defaults.set(impact, forKey: impactKey)
+    }
+
+    private struct ImpactResponse: Codable {
+        var ok: Bool?
+        var results: [String: Int]?
+    }
+
+    private static func fetchImpact(_ items: [Watched]) async -> [String: Int]? {
+        let payload = items.map {
+            ["barcode": $0.barcode, "submittedAt": $0.at] as [String: Any]
+        }
+        var request = URLRequest(
+            url: ProductRepository.serverBase.appendingPathComponent("api/v2/submissions/impact"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["items": payload])
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let decoded = try? JSONDecoder().decode(ImpactResponse.self, from: data)
+        else { return nil }
+        return decoded.results ?? [:]
     }
 
     private static func fetchStatuses(_ items: [Watched]) async -> [String: String]? {

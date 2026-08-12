@@ -252,10 +252,19 @@ struct ProfileView: View {
                                     : "times you've helped everyone")
                                     .font(.subheadline.weight(.bold))
                             }
-                            Text("Each approved product fix went live for every "
-                                + "Simply Pure user. Thank you!")
+                            Text("Your fixes are out there right now, helping "
+                                + "everyone who scans those products. Thank you!")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            let impact = SubmissionWatcher.impactPoints
+                            if impact > 0 {
+                                Text("The community has scanned your products "
+                                    + "\(impact) time\(impact == 1 ? "" : "s") "
+                                    + "since your fixes went live.")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(Color.simplyLink)
+                                    .padding(.top, 2)
+                            }
                         } else {
                             Text("Help everyone who scans")
                                 .font(.headline)
