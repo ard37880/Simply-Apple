@@ -610,8 +610,13 @@ final class ProductRepository {
         + "energy drink|sports drink|soft drink|fruit punch|nectar)\\b"
 
     static func isBeverage(categories: [String], name: String?) -> Bool {
+        // OFF's parent tag "plant-based-foods-and-beverages" sits on plenty
+        // of solid foods (Cheerios), and a bare substring match on
+        // "beverage" was putting cereal on beverage sugar thresholds; that
+        // tag never counts. Same as Android and the server port.
         if categories.contains(where: {
             $0.range(of: beverageTag, options: .regularExpression) != nil
+                && !$0.contains("plant-based-foods-and-beverages")
         }) { return true }
         return categories.isEmpty && (name ?? "").lowercased()
             .range(of: beverageName, options: .regularExpression) != nil
