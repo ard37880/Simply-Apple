@@ -279,8 +279,12 @@ struct ProductView: View {
                    product.nutriments != nil || product.ingredientsText != nil {
                     bioCard(product)
                 }
-                if crowdSignal != nil || crowdShowAsk || crowdYourAnswer != nil
-                    || crowdAnsweredLegacy { crowdCard }
+                // Same answered-moves-down pattern as the bio card: a fresh
+                // ask leads, an answered card waits near Improve this
+                // product. A re-ask keeps the card down there — the
+                // question reopens under the finger that tapped Change
+                // answer, not at the top. Same as Android.
+                if crowdShowAsk, !crowdAnswered { crowdCard }
                 if score.total == nil || score.isPartial { missingDataCard(score) }
                 if !score.euBanned.isEmpty { bannedBanner(score.euBanned) }
 
@@ -368,6 +372,10 @@ struct ProductView: View {
                 if product.kind == .food, crowdAnswered,
                    product.nutriments != nil || product.ingredientsText != nil {
                     bioCard(product)
+                }
+
+                if crowdAnswered || (!crowdShowAsk && crowdSignal != nil) {
+                    crowdCard
                 }
 
                 Button("Wrong or missing data? Improve this product") {
