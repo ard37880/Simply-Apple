@@ -11,6 +11,12 @@ private struct SyncBundle: Codable {
     var diets: [String] = []
     var allergens: [String] = []
     var history: [SyncScan] = []
+    var contributions: [SyncContribution] = []
+}
+
+private struct SyncContribution: Codable {
+    let barcode: String
+    let at: Int64
 }
 
 private struct SyncScan: Codable {
@@ -36,6 +42,8 @@ extension SyncBundle {
         diets = try c.decodeIfPresent([String].self, forKey: .diets) ?? []
         allergens = try c.decodeIfPresent([String].self, forKey: .allergens) ?? []
         history = try c.decodeIfPresent([SyncScan].self, forKey: .history) ?? []
+        contributions = try c.decodeIfPresent(
+            [SyncContribution].self, forKey: .contributions) ?? []
     }
 }
 
@@ -184,6 +192,9 @@ final class SyncEngine {
                     score: $0.score, band: $0.band,
                     hasEuBanned: $0.hasEuBanned,
                     scannedAt: Self.ms($0.scannedAt))
+            },
+            contributions: SubmissionWatcher.journalEntries().map {
+                SyncContribution(barcode: $0.barcode, at: $0.at)
             })
         let blob = try encrypt(JSONEncoder().encode(bundle), key: key)
         var request = URLRequest(
@@ -241,6 +252,13 @@ final class SyncEngine {
                 diets: Set(remote.diets),
                 allergens: Set(remote.allergens),
                 editedAt: remote.prefsEditedAt)
+        }
+        // Adopted journal entries recount immediately, so the uploaded/
+        // helped numbers appear on the new phone right after its first
+        // sync instead of on the next launch.
+        if SubmissionWatcher.mergeJournalEntries(
+            remote.contributions.map { ($0.barcode, $0.at) }) {
+            Task { await SubmissionWatcher.checkAndNotify() }
         }
     }
 

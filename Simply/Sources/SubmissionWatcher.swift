@@ -60,6 +60,35 @@ enum SubmissionWatcher {
         saveJournal(Array(journal.suffix(maxJournal)))
     }
 
+    /// Journal snapshot for device sync: barcode to first-submitted ms.
+    static func journalEntries() -> [(barcode: String, at: Int64)] {
+        loadJournal().map { ($0.barcode, Int64($0.at)) }
+    }
+
+    /// Adopts journal entries synced from a paired device, so the helped
+    /// counters survive a phone upgrade or wipe. Union by barcode keeping
+    /// the earliest time (archives match best from the first submission).
+    /// Returns true when anything changed so the caller can recount.
+    static func mergeJournalEntries(_ entries: [(barcode: String, at: Int64)]) -> Bool {
+        guard !entries.isEmpty else { return false }
+        var journal = loadJournal()
+        var changed = false
+        for entry in entries {
+            let at = Double(entry.at)
+            if let index = journal.firstIndex(where: { $0.barcode == entry.barcode }) {
+                if at < journal[index].at {
+                    journal[index].at = at
+                    changed = true
+                }
+            } else {
+                journal.append(Watched(barcode: entry.barcode, name: "", at: at))
+                changed = true
+            }
+        }
+        if changed { saveJournal(Array(journal.suffix(maxJournal))) }
+        return changed
+    }
+
     /// Called after a successful save in the submit flow.
     static func watch(barcode: String, name: String) {
         var list = load().filter { $0.barcode != barcode }
