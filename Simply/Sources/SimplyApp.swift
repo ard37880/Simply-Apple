@@ -67,8 +67,10 @@ struct SimplyApp: App {
 }
 
 /// Full-screen stop shown when the server's required minimum build is
-/// newer than this one. Beta builds always come from TestFlight, so the
-/// button leads there.
+/// newer than this one. The button leads to the App Store listing —
+/// never TestFlight: App Review reads any TestFlight pointer as "this
+/// app is a beta" (Guideline 2.2), and TestFlight notifies its own
+/// testers of new builds anyway.
 struct UpdateRequiredView: View {
     var body: some View {
         VStack(spacing: 0) {
@@ -80,14 +82,14 @@ struct UpdateRequiredView: View {
                 .font(.title2.bold())
                 .padding(.top, 20)
             Text("This version of Simply Pure is too old to keep going. "
-                + "Grab the newest one in TestFlight and pick up right where "
+                + "Grab the newest one and pick up right where "
                 + "you left off; your history and profile stay on this phone.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.top, 10)
-            Button("Open TestFlight") {
-                if let url = URL(string: "https://testflight.apple.com/join/hwQFC2Gh") {
+            Button("Get the update") {
+                if let url = URL(string: "https://apps.apple.com/app/id6788134759") {
                     UIApplication.shared.open(url)
                 }
             }

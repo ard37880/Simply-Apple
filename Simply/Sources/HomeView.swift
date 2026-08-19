@@ -105,31 +105,11 @@ struct HomeView: View {
                     .padding(.top, 12)
                 }
 
-                // TestFlight never tells testers a new build exists in-app;
-                // this card does, driven by the server config. Play-style
-                // sideload nudges live on Android; here every install is
-                // TestFlight during the beta.
-                if Entitlements.shared.latestBuild > Entitlements.currentBuildNumber {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Update available")
-                                .font(.subheadline.weight(.semibold))
-                            Text("A newer beta is ready in TestFlight.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Button("Get it") {
-                            if let url = URL(string: "https://testflight.apple.com/join/hwQFC2Gh") {
-                                UIApplication.shared.open(url)
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
-                    .padding(14)
-                    .background(Color.simplyCard, in: RoundedRectangle(cornerRadius: 16))
-                    .padding(.top, 14)
-                }
+                // No in-app update nudge on iOS: TestFlight notifies its
+                // testers natively, App Store installs update themselves,
+                // and App Review rejected 1.9 under Guideline 2.2 for the
+                // old "newer beta in TestFlight" card here — an App Store
+                // binary must never present itself as a beta.
 
                 HStack {
                     Text("Recent scans")
