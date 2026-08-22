@@ -53,6 +53,7 @@ struct ProductView: View {
     @State private var shareCard: ShareCard.Rendered?
     @State private var alternatives: [ProductRepository.Alternative] = []
     @State private var showSubmit = false
+    @State private var showSources = false
     @State private var userState: String?
     @State private var crowdSignal: String?
     @State private var crowdShowAsk = false
@@ -148,6 +149,9 @@ struct ProductView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Scan next") { onScanNext() }
             }
+        }
+        .sheet(isPresented: $showSources) {
+            SourcesView()
         }
         .sheet(isPresented: $showSubmit) {
             SubmitView(barcode: barcode, kind: currentKind, unknownKind: isUnknown)
@@ -395,6 +399,13 @@ struct ProductView: View {
                     .padding(.top, 4)
                 Link(destination: URL(string: "https://simplypure.studio86.dev/methodology.html")!) {
                     Text("Read the full methodology").underline()
+                }
+                .font(.caption)
+                .padding(.top, 2)
+                Button {
+                    showSources = true
+                } label: {
+                    Text("Sources & citations").underline()
                 }
                 .font(.caption)
                 .padding(.top, 2)
@@ -1042,6 +1053,7 @@ let euStandardExplainer =
 
 struct EuStandardExplainer: View {
     @State private var expanded = false
+    @State private var showSources = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -1053,9 +1065,18 @@ struct EuStandardExplainer: View {
                 Text(euStandardExplainer)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                Button {
+                    showSources = true
+                } label: {
+                    Text("Sources & citations").underline()
+                }
+                .font(.footnote)
             }
         }
         .padding(.top, 4)
+        .sheet(isPresented: $showSources) {
+            SourcesView()
+        }
     }
 }
 
@@ -1478,7 +1499,24 @@ struct AdditiveRow: View {
                                additive.regionStatus.map { "\($0.0): \($0.1)" }
                                    .joined(separator: "\n"))
                     regulatory("Max permitted level", additive.maxLevelDisplay)
-                    regulatory("Evidence source", additive.evidenceSources.joined(separator: ", "))
+                    // Citations, not just names: each evidence source links
+                    // to the authority's assessment where one is known.
+                    HStack(alignment: .top, spacing: 4) {
+                        Text("Sources:").font(.caption2.bold()).foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(additive.evidenceSources, id: \.self) { source in
+                                if let url = SourceLinks.url(for: source) {
+                                    Link(destination: url) {
+                                        Text(source).underline()
+                                            .multilineTextAlignment(.leading)
+                                    }
+                                    .font(.caption2)
+                                } else {
+                                    Text(source).font(.caption2).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
                 }
                 .padding(.leading, 22)
             }

@@ -222,6 +222,7 @@ struct ProfileView: View {
     @State private var cancelling = false
     @State private var cancelStatus: String?
     @State private var supporterCancelled = Entitlements.shared.isCancelled
+    @State private var showSources = false
 
     var body: some View {
         ScrollView {
@@ -378,6 +379,9 @@ struct ProfileView: View {
                     Button("Terms of use") {
                         openInBrowser("https://simplypure.studio86.dev/terms.html")
                     }
+                    Button("Sources") {
+                        showSources = true
+                    }
                 }
                 .font(.caption)
                 .buttonStyle(.plain)
@@ -396,6 +400,9 @@ struct ProfileView: View {
         .simplyScreenBackground()
         .navigationTitle(profile.name.isEmpty ? "Your profile" : profile.name)
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showSources) {
+            SourcesView()
+        }
     }
 
     /// Light / Dark / System / Themes as one segmented row. Built from
