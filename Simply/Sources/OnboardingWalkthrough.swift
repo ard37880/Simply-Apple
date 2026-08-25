@@ -51,6 +51,19 @@ struct OnboardingWalkthrough: View {
     var onFinished: () -> Void
     @State private var page = 0
 
+    init(onFinished: @escaping () -> Void) {
+        self.onFinished = onFinished
+        #if DEBUG
+        // Layout testing: `simctl launch ... -walkPage 3` jumps straight
+        // to a page so short-window rendering can be screenshotted.
+        let args = ProcessInfo.processInfo.arguments
+        if let flag = args.firstIndex(of: "-walkPage"), args.count > flag + 1,
+           let n = Int(args[flag + 1]) {
+            _page = State(initialValue: min(max(n, 0), walkPages.count - 1))
+        }
+        #endif
+    }
+
     var body: some View {
         let current = walkPages[page]
         ZStack {
@@ -103,31 +116,79 @@ struct OnboardingWalkthrough: View {
     }
 
     private func pageContent(_ p: WalkPage, index: Int) -> some View {
+        // iPhone-compat windows on iPad (especially landscape) are much
+        // shorter than any iPhone, and App Review rejected 1.9 for
+        // cropped onboarding text there. Short-wide windows lay art and
+        // copy side by side; portrait scales the art down instead of
+        // clipping and lets the copy scroll rather than crop.
         GeometryReader { geo in
-            VStack(spacing: 0) {
-                ZStack {
-                    switch index {
-                    case 0: ScoreRingArt()
-                    case 1: ScannerArt()
-                    case 2: ResultArt(page: p)
-                    default: PersonalizeArt(page: p)
+            let artNominal: CGFloat = 430
+            if geo.size.width > geo.size.height {
+                HStack(spacing: 0) {
+                    art(index, p)
+                        .frame(width: artNominal, height: artNominal)
+                        .scaleEffect(min(1, (geo.size.height - 40) / artNominal))
+                        .frame(width: geo.size.width * 0.42,
+                               height: geo.size.height)
+                        .clipped()
+                    ScrollView(.vertical, showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(p.headline)
+                                .font(.title.bold())
+                                .foregroundStyle(p.ink)
+                            Text(p.body)
+                                .font(.body)
+                                .foregroundStyle(p.ink.opacity(0.75))
+                                .padding(.top, 12)
+                            // Clear of the overlaid dots and buttons.
+                            Spacer(minLength: 140)
+                        }
+                        .padding(.top, 24)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                .frame(maxWidth: .infinity)
-                .frame(height: geo.size.height * 0.55)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(p.headline)
-                        .font(.largeTitle.bold())
-                        .foregroundStyle(p.ink)
-                    Text(p.body)
-                        .font(.body)
-                        .foregroundStyle(p.ink.opacity(0.75))
-                        .padding(.top, 12)
-                    Spacer()
+                .padding(.horizontal, 28)
+            } else {
+                // The copy is laid out first at its natural height and
+                // the art takes whatever remains, shrinking to fit — so
+                // text can never crop, on any window height.
+                VStack(spacing: 0) {
+                    GeometryReader { artGeo in
+                        art(index, p)
+                            .frame(width: artNominal, height: artNominal)
+                            .scaleEffect(min(1, min(artGeo.size.width,
+                                                    artGeo.size.height) / artNominal))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(p.headline)
+                            .font(.largeTitle.bold())
+                            .foregroundStyle(p.ink)
+                        Text(p.body)
+                            .font(.body)
+                            .foregroundStyle(p.ink.opacity(0.75))
+                            .padding(.top, 12)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    // Clear of the overlaid dots and buttons.
+                    Spacer(minLength: 150)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 28)
+                .frame(maxWidth: 560)
+                .frame(maxWidth: .infinity)
             }
-            .padding(.horizontal, 28)
+        }
+    }
+
+    private func art(_ index: Int, _ p: WalkPage) -> some View {
+        ZStack {
+            switch index {
+            case 0: ScoreRingArt()
+            case 1: ScannerArt()
+            case 2: ResultArt(page: p)
+            default: PersonalizeArt(page: p)
+            }
         }
     }
 }
