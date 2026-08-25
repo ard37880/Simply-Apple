@@ -12,13 +12,13 @@ enum SourceLinks {
             return u("https://doi.org/10.1016/S0140-6736(07)61306-3")
         }
         if lower.contains("2021") && lower.contains("efsa") {
-            return u("https://www.efsa.europa.eu/en/efsajournal/pub/6585")
+            return u("https://www.efsa.europa.eu/en/news/titanium-dioxide-e171-no-longer-considered-safe-when-used-food-additive")
         }
-        if lower.contains("nitrite") {
-            return u("https://www.efsa.europa.eu/en/efsajournal/pub/7884")
+        if lower.contains("nitrite") || lower.contains("nitrosamine") {
+            return u("https://food.ec.europa.eu/food-safety/food-improvement-agents/additives/re-evaluation_en")
         }
         if lower.contains("2022/63") {
-            return u("https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32022R0063")
+            return u("https://www.efsa.europa.eu/en/news/titanium-dioxide-e171-no-longer-considered-safe-when-used-food-additive")
         }
         if lower.contains("efsa") {
             return u("https://www.efsa.europa.eu/en/topics/topic/food-additives")
@@ -27,16 +27,13 @@ enum SourceLinks {
             return u("https://monographs.iarc.who.int/list-of-classifications")
         }
         if lower.contains("mhlw") || lower.contains("japan") {
-            return u("https://www.mhlw.go.jp/english/topics/foodsafety/foodadditives/index.html")
+            return u("https://www.ffcr.or.jp/en/tenka/")
         }
         if lower.contains("health canada") {
-            return u("https://www.canada.ca/en/health-canada/services/food-nutrition/food-safety/food-additives/lists-permitted.html")
-        }
-        if lower.contains("singapore") {
-            return u("https://www.sfa.gov.sg/food-information/food-additives")
+            return u("https://inspection.canada.ca/en/food-labels/labelling/industry/food-additives")
         }
         if lower.contains("fda") {
-            return u("https://www.fda.gov/food/food-additives-petitions")
+            return u("https://www.fda.gov/food/food-ingredients-packaging")
         }
         if lower.contains("additives database") || lower.contains("european commission") {
             return u("https://food.ec.europa.eu/food-safety/food-improvement-agents/additives/database_en")
@@ -72,8 +69,8 @@ struct SourcesView: View {
                          "The EU's scientific risk assessments, additive by additive.",
                          "https://www.efsa.europa.eu/en/topics/topic/food-additives"),
                         ("Regulation (EC) No 1333/2008",
-                         "The EU list of permitted food additives and their conditions of use.",
-                         "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32008R1333"),
+                         "The EU framework for permitted food additives and their conditions of use.",
+                         "https://food.ec.europa.eu/food-safety/food-improvement-agents/additives_en"),
                         ("EU Food Additives Database",
                          "Per-additive permissions and maximum levels by food category.",
                          "https://food.ec.europa.eu/food-safety/food-improvement-agents/additives/database_en"),
@@ -84,14 +81,11 @@ struct SourcesView: View {
 
                     section("Key assessments behind red flags", [
                         ("EFSA 2021 opinion on titanium dioxide (E171)",
-                         "Why E171 is no longer considered safe as a food additive in the EU.",
-                         "https://www.efsa.europa.eu/en/efsajournal/pub/6585"),
-                        ("Commission Regulation (EU) 2022/63",
-                         "The EU ban on titanium dioxide in food.",
-                         "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32022R0063"),
-                        ("EFSA 2023 re-evaluation of nitrites and nitrates",
-                         "The assessment behind the caution on cured-meat nitrites.",
-                         "https://www.efsa.europa.eu/en/efsajournal/pub/7884"),
+                         "Why E171 is no longer considered safe as a food additive in the EU; the basis of the 2022 EU ban.",
+                         "https://www.efsa.europa.eu/en/news/titanium-dioxide-e171-no-longer-considered-safe-when-used-food-additive"),
+                        ("EU re-evaluation of nitrites and the 2023 nitrosamines assessment",
+                         "The assessments behind the caution on cured-meat nitrites; EU maximum levels were lowered in 2023.",
+                         "https://food.ec.europa.eu/food-safety/food-improvement-agents/additives/re-evaluation_en"),
                         ("McCann et al., The Lancet (2007)",
                          "The Southampton study linking six dyes to hyperactivity; the basis of the EU warning label.",
                          "https://doi.org/10.1016/S0140-6736(07)61306-3"),
@@ -101,12 +95,12 @@ struct SourcesView: View {
                     ])
 
                     section("Country and region status", [
-                        ("Japan MHLW — food additives",
-                         "Japan's positive-list system for designated additives.",
-                         "https://www.mhlw.go.jp/english/topics/foodsafety/foodadditives/index.html"),
-                        ("Health Canada — permitted food additives",
-                         "Canada's lists of permitted additives and conditions.",
-                         "https://www.canada.ca/en/health-canada/services/food-nutrition/food-safety/food-additives/lists-permitted.html"),
+                        ("Japan's food additive lists (FFCR, English)",
+                         "The English edition of Japan's positive-list system, maintained by the Japan Food Chemical Research Foundation.",
+                         "https://www.ffcr.or.jp/en/tenka/"),
+                        ("Canada — food additive requirements (CFIA)",
+                         "Canada's food additive rules and Health Canada's lists of permitted additives.",
+                         "https://inspection.canada.ca/en/food-labels/labelling/industry/food-additives"),
                     ])
 
                     section("Dose estimates", [
@@ -118,7 +112,7 @@ struct SourcesView: View {
                     section("Nutrition", [
                         ("Regulation (EU) No 1169/2011",
                          "EU reference intakes used for the daily-reference percentages.",
-                         "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32011R1169"),
+                         "https://food.ec.europa.eu/food-safety/labelling-and-nutrition/food-information-consumers-legislation_en"),
                         ("US FDA — Daily Values",
                          "US reference values for nutrition labeling.",
                          "https://www.fda.gov/food/nutrition-facts-label/daily-value-nutrition-and-supplement-facts-labels"),
@@ -133,7 +127,7 @@ struct SourcesView: View {
                     section("Personal care products", [
                         ("Regulation (EC) No 1223/2009",
                          "The EU Cosmetics Regulation, including banned and restricted substances.",
-                         "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32009R1223"),
+                         "https://single-market-economy.ec.europa.eu/sectors/cosmetics_en"),
                         ("SCCS — Scientific Committee on Consumer Safety",
                          "EU safety opinions on cosmetic ingredients.",
                          "https://health.ec.europa.eu/scientific-committees/scientific-committee-consumer-safety-sccs_en"),
@@ -143,12 +137,12 @@ struct SourcesView: View {
                     ])
 
                     section("Household products", [
-                        ("CLP Regulation (ECHA)",
+                        ("EU chemicals classification (CLP)",
                          "EU hazard classifications for chemicals.",
-                         "https://echa.europa.eu/regulations/clp/understanding-clp"),
+                         "https://environment.ec.europa.eu/topics/chemicals_en"),
                         ("Detergents Regulation (EC) No 648/2004",
                          "EU rules on detergent ingredients and biodegradability.",
-                         "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32004R0648"),
+                         "https://single-market-economy.ec.europa.eu/sectors/chemicals_en"),
                     ])
 
                     section("Pet food", [
