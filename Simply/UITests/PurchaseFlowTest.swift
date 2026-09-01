@@ -86,6 +86,61 @@ final class PurchaseFlowTest: XCTestCase {
                       + "did not survive, or the gate ignores it")
     }
 
+    /// Every tier must be buyable, and the slider position must charge for
+    /// the product it is showing. An off-by-one here would take a Champion's
+    /// money for a Premium subscription (or the reverse), which no amount of
+    /// UI testing on the default tier would catch.
+    func testEveryTierChargesTheProductItShows() throws {
+        let expected = [
+            (position: 0.0, price: "$11.99", id: "com.studio86.simply.premium.year12"),
+            (position: 0.5, price: "$23.99", id: "com.studio86.simply.premium.year24"),
+            (position: 1.0, price: "$47.99", id: "com.studio86.simply.premium.year48"),
+        ]
+
+        for tier in expected {
+            let session = try SKTestSession(contentsOf: Bundle(
+                for: Self.self).url(forResource: "Premium", withExtension: "storekit")!)
+            session.resetToDefaultState()
+            session.clearTransactions()
+            session.disableDialogs = true
+
+            let app = XCUIApplication()
+            app.launchArguments = launchArguments()
+            app.launch()
+
+            XCTAssertTrue(app.buttons["Your profile"].waitForExistence(timeout: 20),
+                          "home never appeared for \(tier.price)")
+            app.buttons["Your profile"].tap()
+
+            let slider = app.sliders.firstMatch
+            XCTAssertTrue(reveal(slider, in: app), "tier slider never appeared")
+            slider.adjust(toNormalizedSliderPosition: tier.position)
+
+            // The headline price must follow the slider before we commit.
+            let shown = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label CONTAINS %@", tier.price)).firstMatch
+            XCTAssertTrue(shown.waitForExistence(timeout: 5),
+                          "slider at \(tier.position) did not show \(tier.price)")
+
+            let buy = app.buttons["Become a supporter"]
+            XCTAssertTrue(reveal(buy, in: app), "no purchase button for \(tier.price)")
+            buy.tap()
+
+            let confirmation = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label CONTAINS 'supporter now' "
+                                      + "OR label CONTAINS 'Premium unlocked'")).firstMatch
+            XCTAssertTrue(confirmation.waitForExistence(timeout: 30),
+                          "\(tier.price) never completed a purchase")
+
+            // The decisive check: what did StoreKit actually charge for?
+            let ids = try session.allTransactions().map(\.productIdentifier)
+            XCTAssertEqual(ids, [tier.id],
+                           "slider showed \(tier.price) but charged for \(ids)")
+
+            app.terminate()
+        }
+    }
+
     /// A fresh install with the gates on and no purchase must stay locked.
     /// Guards against the paywall failing open for everyone.
     func testGatesStayLockedWithoutPurchase() throws {
